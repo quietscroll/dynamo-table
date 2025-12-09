@@ -4,7 +4,7 @@
 /// New tests should use the `helpers` module instead.
 
 #[allow(unused)]
-pub use rusty_ulid::{generate_ulid_string, Ulid};
+pub use rusty_ulid::{Ulid, generate_ulid_string};
 #[allow(unused)]
 pub use serde::{Deserialize, Serialize};
 

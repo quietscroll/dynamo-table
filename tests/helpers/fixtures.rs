@@ -2,7 +2,6 @@
 ///
 /// Defines reusable test models that implement DynamoTable and GSITable
 /// for use across multiple test files.
-
 use super::{Deserialize, DynamoTable, Serialize};
 use dynamo_table::table::{GSITable, SortKey};
 

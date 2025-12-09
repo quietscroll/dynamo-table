@@ -1,14 +1,13 @@
 /// DynamoDB Query Operations Tests
 ///
 /// Tests query operations including pagination, filtering, and sorting.
-
 use futures_util::StreamExt;
 use serial_test::serial;
 use std::collections::HashMap;
 
 mod helpers;
-use helpers::*;
 use dynamo_table::table::query_items_stream;
+use helpers::*;
 
 /// Test pagination with last evaluated key
 #[tokio::test]
@@ -89,7 +88,11 @@ async fn test_query_with_filter() {
     .await
     .unwrap();
 
-    assert_eq!(results.items.len(), 4, "Should have 4 items with number2 > 5");
+    assert_eq!(
+        results.items.len(),
+        4,
+        "Should have 4 items with number2 > 5"
+    );
     for item in &results.items {
         assert!(item.number2 > 5);
     }

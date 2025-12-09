@@ -1,9 +1,8 @@
+use dynamo_table::table::{DynamoTable, batch_write};
 /// Example: Handling batch_write partial failures with exponential backoff retry
 ///
 /// This demonstrates the proper way to handle unprocessed items from batch operations.
-
 use std::time::Duration;
-use dynamo_table::table::{batch_write, DynamoTable};
 
 /// Retry batch write with exponential backoff
 ///
@@ -104,11 +103,8 @@ where
             unprocessed_deletes.len()
         );
 
-        let result = batch_write::<T>(
-            unprocessed_creates.clone(),
-            unprocessed_deletes.clone(),
-        )
-        .await?;
+        let result =
+            batch_write::<T>(unprocessed_creates.clone(), unprocessed_deletes.clone()).await?;
 
         // Check results
         let unprocessed_create_count = result.failed_puts.len();
@@ -166,10 +162,7 @@ where
     println!("  Total items: {}", total_items);
     println!("  Consumed capacity: {} units", total_capacity);
     println!("  Batches processed: {}", result.consumed_capacity.len());
-    println!(
-        "  Unprocessed items: {}",
-        result.failed_puts.len()
-    );
+    println!("  Unprocessed items: {}", result.failed_puts.len());
 
     // Calculate success rate
     let processed = total_items - result.failed_puts.len();
@@ -178,7 +171,10 @@ where
 
     // Check for item collection metrics (useful for tables with LSI)
     if !result.item_collection_metrics.is_empty() {
-        println!("  Item collections affected: {}", result.item_collection_metrics.len());
+        println!(
+            "  Item collections affected: {}",
+            result.item_collection_metrics.len()
+        );
     }
 
     Ok(())

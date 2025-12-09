@@ -1,7 +1,6 @@
 /// DynamoDB CRUD Operations Tests
 ///
 /// Tests basic create, read, update, and delete operations on DynamoDB tables.
-
 use serial_test::serial;
 use std::collections::HashMap;
 
@@ -211,9 +210,7 @@ async fn test_delete_item() {
     obj.destroy_item().await.unwrap();
 
     // Verify deleted
-    let gone = TestObject::get_item(&pk, Some(&sk))
-        .await
-        .unwrap();
+    let gone = TestObject::get_item(&pk, Some(&sk)).await.unwrap();
     assert!(gone.is_none(), "Item should be deleted");
 }
 
@@ -257,9 +254,13 @@ async fn test_increment_multiple_fields() {
     obj.add_item().await.unwrap();
 
     // Increment multiple fields (note: TestCounters has no sort key)
-    dynamo_table::table::increment_multiple::<TestCounters>(&obj.imo, None, &[("p1", 5), ("p2", 3)])
-        .await
-        .unwrap();
+    dynamo_table::table::increment_multiple::<TestCounters>(
+        &obj.imo,
+        None,
+        &[("p1", 5), ("p2", 3)],
+    )
+    .await
+    .unwrap();
 
     // Verify increments
     let got = TestCounters::get_item(&obj.imo, None)

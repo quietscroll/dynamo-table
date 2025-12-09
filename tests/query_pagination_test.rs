@@ -2,7 +2,7 @@ use rusty_ulid::Ulid;
 use serial_test::serial;
 
 mod support;
-use dynamo_table::table::{query_items_begins_with, query_items_between, DynamoTable, SortKey};
+use dynamo_table::table::{DynamoTable, SortKey, query_items_begins_with, query_items_between};
 use support::*;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]

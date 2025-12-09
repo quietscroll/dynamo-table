@@ -2,12 +2,11 @@
 ///
 /// This module provides common test utilities, fixtures, and helper functions
 /// used across all integration tests.
-
 pub mod fixtures;
 
-pub use serde::{Deserialize, Serialize};
 pub use dynamo_table::setup;
 pub use dynamo_table::table::DynamoTable;
+pub use serde::{Deserialize, Serialize};
 
 // Re-export common fixtures
 pub use fixtures::{TestCounters, TestObject};

@@ -1,13 +1,12 @@
 /// DynamoDB Global Secondary Index Tests
 ///
 /// Tests GSI query operations including filtering and counting.
-
 use serial_test::serial;
 use std::collections::HashMap;
 
 mod helpers;
-use helpers::*;
 use dynamo_table::table::GSITable;
+use helpers::*;
 
 /// Helper to clean and setup GSI table
 async fn setup_gsi_table() {
@@ -62,16 +61,15 @@ async fn test_gsi_query_basic() {
     }
 
     // Query by GSI
-    let gsi_results = TestGSIObject::query_gsi_items(
-        user_id.to_string(),
-        None,
-        Some(10),
-        None,
-    )
-    .await
-    .unwrap();
+    let gsi_results = TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(10), None)
+        .await
+        .unwrap();
 
-    assert_eq!(gsi_results.items.len(), 2, "Should find 2 items for user_id");
+    assert_eq!(
+        gsi_results.items.len(),
+        2,
+        "Should find 2 items for user_id"
+    );
 
     for result in &gsi_results.items {
         assert_eq!(result.user_id, user_id);
@@ -99,14 +97,10 @@ async fn test_gsi_reverse_query() {
     }
 
     // Query in reverse order
-    let reverse_results = TestGSIObject::reverse_query_gsi_items(
-        user_id.to_string(),
-        None,
-        Some(10),
-        None,
-    )
-    .await
-    .unwrap();
+    let reverse_results =
+        TestGSIObject::reverse_query_gsi_items(user_id.to_string(), None, Some(10), None)
+            .await
+            .unwrap();
 
     assert_eq!(reverse_results.items.len(), 5);
 

@@ -7,8 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod support;
 use dynamo_table::table::{
-    batch_get, batch_write, increment_multiple, query_items_stream, query_items_with_filter,
-    DynamoTable, GSITable, SortKey,
+    DynamoTable, GSITable, SortKey, batch_get, batch_write, increment_multiple, query_items_stream,
+    query_items_with_filter,
 };
 use support::*;
 
