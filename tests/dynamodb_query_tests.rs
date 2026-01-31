@@ -231,6 +231,57 @@ async fn test_query_begins_with() {
     }
 }
 
+/// Test querying with contains condition
+#[tokio::test]
+#[serial]
+async fn test_query_contains() {
+    let _ = setup::table::<TestObject>().await;
+
+    let partition_key = "contains_test_1".to_string();
+
+    // Add items with different sort key fragments
+    for value in &["alpha_mid_beta", "midway", "nomatch", "prefix_mid"] {
+        let obj = TestObject {
+            game: partition_key.clone(),
+            age: value.to_string(),
+            ux: value.to_string(),
+            number2: value.len(),
+        };
+        obj.add_item().await.unwrap();
+    }
+
+    // Query for items containing "mid"
+    let results = TestObject::query_items_contains(
+        &partition_key,
+        None,
+        Some(100),
+        true,
+        "ux".to_string(),
+        "mid".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(results.items.len(), 3);
+    for item in &results.items {
+        assert!(item.age.contains("mid"));
+    }
+
+    // Query for items containing "mid"
+    let results = TestObject::query_items_contains(
+        &partition_key,
+        None,
+        Some(100),
+        true,
+        "ux".to_string(),
+        "1mid".to_string(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(results.items.len(), 0);
+}
+
 /// Test query single item
 #[tokio::test]
 #[serial]

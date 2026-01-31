@@ -742,6 +742,26 @@ where
         )
     }
 
+    /// Query items where the non primary keys contain a substring
+    fn query_items_contains(
+        partition_key: &Self::PK,
+        exclusive_start_key: Option<&Self::SK>,
+        limit: Option<u16>,
+        scan_index_forward: bool,
+        field_name: String,
+        field_value: String,
+    ) -> impl Future<Output = Result<OutputItems<Self>, Error>> {
+        query_items_contains::<Self>(
+            partition_key,
+            exclusive_start_key,
+            limit,
+            None,
+            scan_index_forward,
+            field_name,
+            field_value,
+        )
+    }
+
     /// Query items beginning with sort key prefix
     fn query_items_begins_with(
         partition_key: &Self::PK,
@@ -1112,6 +1132,114 @@ where
         .expression_attribute_values(":hash_value", AttributeValue::S(partition_key.to_string()))
         .expression_attribute_values(":range_start", AttributeValue::S(range_start))
         .expression_attribute_values(":range_end", AttributeValue::S(range_end));
+
+    if let Some(index_name) = index_name {
+        builder = builder.index_name(index_name);
+    }
+
+    if let Some(sort_key) = exclusive_start_key {
+        builder = builder
+            .exclusive_start_key(
+                T::PARTITION_KEY,
+                AttributeValue::S(partition_key.to_string()),
+            )
+            .exclusive_start_key(sort_key_field, AttributeValue::S(sort_key.to_string()));
+    }
+
+    let result = builder.send().await?;
+
+    Ok(OutputItems::from((result, limit)))
+}
+
+/// Query items using a `contains` condition on the sort key.
+#[allow(clippy::too_many_arguments)]
+pub async fn query_items_contains<T>(
+    partition_key: &T::PK,
+    exclusive_start_key: Option<&T::SK>,
+    limit: Option<u16>,
+    index_name: Option<String>,
+    scan_index_forward: bool,
+    field_name: String,
+    field_value: String,
+) -> Result<OutputItems<T>, Error>
+where
+    T: DynamoTable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+{
+    if limit.map(|l| l == 0).unwrap_or(false) {
+        return Ok(OutputItems::default());
+    }
+
+    let limit = limit.unwrap_or(T::DEFAULT_PAGE_SIZE);
+
+    let mut builder = T::dynamodb_client()
+        .await
+        .query()
+        .table_name(T::TABLE)
+        .set_return_consumed_capacity(None)
+        .scan_index_forward(scan_index_forward)
+        .limit(limit as i32)
+        .key_condition_expression(format!("{} = :hash_value", T::PARTITION_KEY))
+        .filter_expression(format!("contains({field_name}, :v_field_name)"))
+        .expression_attribute_values(":hash_value", AttributeValue::S(partition_key.to_string()))
+        .expression_attribute_values(":v_field_name", AttributeValue::S(field_value));
+
+    if let Some(index_name) = index_name {
+        builder = builder.index_name(index_name);
+    }
+
+    if let Some(sort_key) = exclusive_start_key {
+        let sort_key_field = T::SORT_KEY.expect("sort key required for contains query");
+
+        builder = builder
+            .exclusive_start_key(
+                T::PARTITION_KEY,
+                AttributeValue::S(partition_key.to_string()),
+            )
+            .exclusive_start_key(sort_key_field, AttributeValue::S(sort_key.to_string()));
+    }
+
+    let result = builder.send().await?;
+
+    Ok(OutputItems::from((result, limit)))
+}
+
+/// Query items using a `ends_with` condition on the sort key.
+#[allow(clippy::too_many_arguments)]
+pub async fn query_items_ends_with<T>(
+    partition_key: &T::PK,
+    exclusive_start_key: Option<&T::SK>,
+    limit: Option<u16>,
+    index_name: Option<String>,
+    scan_index_forward: bool,
+    prefix: String,
+) -> Result<OutputItems<T>, Error>
+where
+    T: DynamoTable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+{
+    if limit.map(|l| l == 0).unwrap_or(false) {
+        return Ok(OutputItems::default());
+    }
+
+    let limit = limit.unwrap_or(T::DEFAULT_PAGE_SIZE);
+    let sort_key_field = T::SORT_KEY.expect("sort key required for begins_with query");
+
+    let mut builder = T::dynamodb_client()
+        .await
+        .query()
+        .table_name(T::TABLE)
+        .set_return_consumed_capacity(None)
+        .scan_index_forward(scan_index_forward)
+        .limit(limit as i32)
+        .key_condition_expression(format!(
+            "{} = :hash_value AND begins_with({sort_key_field}, :sort_prefix)",
+            T::PARTITION_KEY,
+        ))
+        .expression_attribute_values(":hash_value", AttributeValue::S(partition_key.to_string()))
+        .expression_attribute_values(":sort_prefix", AttributeValue::S(prefix));
 
     if let Some(index_name) = index_name {
         builder = builder.index_name(index_name);
