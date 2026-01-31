@@ -1,6 +1,6 @@
 [package]
 name = "dynamo_table"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Ernestas Poskus <ernestas.poskus@gmail.com>"]
 description = "A high-level DynamoDB table abstraction with get_item, query, update, filter, batch operations, pagination, and type-safe queries"
