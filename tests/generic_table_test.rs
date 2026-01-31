@@ -1035,10 +1035,16 @@ async fn test_scan_items_with_filter_with_pagination() {
         println!("Second page found {} items", second_page.items.len());
 
         // Basic validation - pages should be different
-        let first_page_keys: Vec<String> =
-            first_page.items.iter().map(|o| o.game.clone()).collect();
-        let second_page_keys: Vec<String> =
-            second_page.items.iter().map(|o| o.game.clone()).collect();
+        let first_page_keys: Vec<(String, String)> = first_page
+            .items
+            .iter()
+            .map(|o| (o.game.clone(), o.age.clone()))
+            .collect();
+        let second_page_keys: Vec<(String, String)> = second_page
+            .items
+            .iter()
+            .map(|o| (o.game.clone(), o.age.clone()))
+            .collect();
 
         let overlap = first_page_keys
             .iter()
