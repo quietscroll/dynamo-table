@@ -33,9 +33,7 @@ pub(crate) mod validation {
     /// Validate a single key is not a reserved word
     #[inline]
     fn validate_key(key: &str) {
-        if cfg!(debug_assertions) {
-            crate::assert_not_reserved_key(key);
-        }
+        crate::assert_not_reserved_key(key);
     }
 
     /// Validate an optional key is not a reserved word

@@ -5,9 +5,10 @@ use aws_sdk_dynamodb::types::{
 };
 use std::fmt;
 
+use crate::assert_not_reserved_key;
+use crate::dynamodb_client;
 use crate::error::Error;
 use crate::table::{DynamoTable, GSITable};
-use crate::{assert_not_reserved_key, dynamodb_client};
 
 /// Create a table from DynamoTable
 ///

@@ -264,8 +264,7 @@ pub async fn dynamodb_client() -> &'static DynamoDbClient {
         .await
 }
 
-#[cfg(debug_assertions)]
-pub(crate) fn assert_not_reserved_key(key: &str) {
+fn _assert_not_reserved_key(key: &str) {
     // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ReservedWords.html
     #[rustfmt::skip]
     const KEYS: [&str; 573] = [
@@ -273,6 +272,12 @@ pub(crate) fn assert_not_reserved_key(key: &str) {
 ];
 
     debug_assert!(!KEYS.contains(&key), "Reserved key: {key}");
+}
+
+#[allow(unused_variables)]
+pub(crate) fn assert_not_reserved_key(key: &str) {
+    #[cfg(debug_assertions)]
+    _assert_not_reserved_key(key);
 }
 
 #[cfg(test)]
