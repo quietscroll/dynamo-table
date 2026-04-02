@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: localstack/localstack:3
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: dynamodb
+          AWS_DEFAULT_REGION: us-east-1
+    env:
+      AWS_PROFILE: localstack
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+
+      - name: Wait for LocalStack
+        run: |
+          for _ in {1..30}; do
+            if curl -fsS http://127.0.0.1:4566/_localstack/health | grep -Eq '"dynamodb"[[:space:]]*:[[:space:]]*"available"'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "LocalStack did not become ready in time" >&2
+          exit 1
+
+      - name: Run cargo check
+        run: cargo check
+
+      - name: Run cargo test
+        run: cargo test

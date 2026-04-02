@@ -22,7 +22,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-dynamo_table = "0.1"
+dynamo_table = "0.3"
 aws-config = "1"
 aws-sdk-dynamodb = "1"
 serde = { version = "1", features = ["derive"] }
@@ -657,11 +657,50 @@ async fn main() {
 
 ### LocalStack Support
 
-The library automatically detects LocalStack when `AWS_PROFILE=localstack`:
+The library automatically detects LocalStack when `AWS_PROFILE=localstack`.
+Start LocalStack with DynamoDB enabled, then run the normal Rust test commands:
 
 ```bash
+docker run --rm -d \
+  --name dynamo-table-localstack \
+  -p 4566:4566 \
+  -e SERVICES=dynamodb \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  localstack/localstack:3
+
 export AWS_PROFILE=localstack
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+
+cargo check
 cargo test
+```
+
+Stop the container when you are done:
+
+```bash
+docker stop dynamo-table-localstack
+```
+
+### GitHub Actions CI
+
+This repository includes a GitHub Actions workflow at `.github/workflows/ci.yml`.
+It starts a LocalStack service with DynamoDB enabled and runs:
+
+```bash
+cargo check
+cargo test
+```
+
+The workflow sets the same environment variables used for local development:
+
+```bash
+AWS_PROFILE=localstack
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_DEFAULT_REGION=us-east-1
+AWS_REGION=us-east-1
 ```
 
 ### Custom Test Client
