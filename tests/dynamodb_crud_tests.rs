@@ -1,11 +1,42 @@
 /// DynamoDB CRUD Operations Tests
 ///
 /// Tests basic create, read, update, and delete operations on DynamoDB tables.
+use aws_sdk_dynamodb::types::AttributeValue;
 use serial_test::serial;
 use std::collections::HashMap;
 
 mod helpers;
 use helpers::*;
+
+async fn get_raw_item<T>(
+    partition_key: &T::PK,
+    sort_key: Option<&T::SK>,
+) -> HashMap<String, AttributeValue>
+where
+    T: DynamoTable,
+    T::PK: std::fmt::Display + Clone + Send + Sync + std::fmt::Debug,
+    T::SK: std::fmt::Display + Clone + Send + Sync + std::fmt::Debug,
+{
+    let mut builder = dynamo_table::dynamodb_client()
+        .await
+        .get_item()
+        .table_name(T::TABLE)
+        .key(
+            T::PARTITION_KEY,
+            AttributeValue::S(partition_key.to_string()),
+        );
+
+    if let (Some(sort_key_name), Some(sort_key)) = (T::SORT_KEY, sort_key) {
+        builder = builder.key(sort_key_name, AttributeValue::S(sort_key.to_string()));
+    }
+
+    builder
+        .send()
+        .await
+        .unwrap()
+        .item
+        .expect("expected item to exist")
+}
 
 /// Test basic item creation and retrieval
 #[tokio::test]
@@ -94,6 +125,54 @@ async fn test_update_item_fields() {
 
     assert_eq!(got.ux, "new_value");
     assert_eq!(got.number2, 10);
+}
+
+/// Test removing multiple attributes from an item with a composite key
+#[tokio::test]
+#[serial]
+async fn test_remove_attributes_with_sort_key() {
+    let _ = setup::table::<TestObject>().await;
+
+    let obj = TestObject {
+        game: "remove_attrs_sort_key".into(),
+        age: "1".into(),
+        ux: "remove_me".into(),
+        number2: 99,
+    };
+
+    obj.add_item().await.unwrap();
+    obj.remove_attributes(&["ux", "number2"]).await.unwrap();
+
+    let item = get_raw_item::<TestObject>(&obj.game, Some(&obj.age)).await;
+
+    assert!(!item.contains_key("ux"));
+    assert!(!item.contains_key("number2"));
+    assert_eq!(item.get("game"), Some(&AttributeValue::S(obj.game.clone())));
+    assert_eq!(item.get("age"), Some(&AttributeValue::S(obj.age.clone())));
+}
+
+/// Test removing an attribute from an item with only a partition key
+#[tokio::test]
+#[serial]
+async fn test_remove_attributes_without_sort_key() {
+    let _ = setup::table::<TestCounters>().await;
+
+    let obj = TestCounters {
+        imo: "remove_attrs_partition_only".into(),
+        det: "det1".into(),
+        p1: 7,
+        p2: 13,
+    };
+
+    obj.add_item().await.unwrap();
+    obj.remove_attributes(&["p2"]).await.unwrap();
+
+    let item = get_raw_item::<TestCounters>(&obj.imo, None).await;
+
+    assert!(!item.contains_key("p2"));
+    assert_eq!(item.get("imo"), Some(&AttributeValue::S(obj.imo.clone())));
+    assert_eq!(item.get("det"), Some(&AttributeValue::S(obj.det.clone())));
+    assert_eq!(item.get("p1"), Some(&AttributeValue::N(obj.p1.to_string())));
 }
 
 /// Test conditional update operations

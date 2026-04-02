@@ -518,6 +518,20 @@ where
         increment_multiple::<Self>(partition_key, sort_key, fields)
     }
 
+    /// Remove one or more attributes from an existing item using a DynamoDB REMOVE expression.
+    ///
+    /// This is the correct way to delete an attribute from a DynamoDB item. Using
+    /// `update_item` with a `None` value does not remove the attribute; it simply
+    /// omits it from the SET expression (leaving the stored value unchanged).
+    fn remove_attributes(
+        &self,
+        attributes: &[&str],
+    ) -> impl Future<Output = Result<UpdateItemOutput, Error>> {
+        let partition_key = self.partition_key();
+        let sort_key = self.sort_key();
+        remove_attributes::<Self>(partition_key, sort_key, attributes)
+    }
+
     /// Update an item with an optional condition expression (same params as `update_item` plus condition)
     fn update_item_with_condition<U: Serialize + Send, C: Serialize>(
         &self,
@@ -1805,6 +1819,44 @@ where
     let result = builder.send().await?;
 
     Ok(OutputItems::from((result, limit)))
+}
+
+/// Remove one or more attributes from a DynamoDB item using a REMOVE update expression.
+///
+/// Unlike `update_item` which only generates SET expressions, this explicitly deletes
+/// attributes from the item. Useful for clearing optional fields (e.g., resetting
+/// `fetch_mode` back to absent after a one-time backfill pass).
+pub async fn remove_attributes<T>(
+    partition_key: T::PK,
+    sort_key: Option<T::SK>,
+    attributes: &[&str],
+) -> Result<UpdateItemOutput, Error>
+where
+    T: DynamoTable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+{
+    assert!(!attributes.is_empty(), "attributes list must not be empty");
+
+    let remove_expr = format!("REMOVE {}", attributes.join(", "));
+
+    let mut builder = T::dynamodb_client()
+        .await
+        .update_item()
+        .table_name(T::TABLE)
+        .key(
+            T::PARTITION_KEY,
+            AttributeValue::S(partition_key.to_string()),
+        )
+        .update_expression(remove_expr)
+        .set_return_consumed_capacity(None)
+        .set_return_values(Some(ReturnValue::None));
+
+    if let (Some(sort_key_field), Some(sort_value)) = (T::SORT_KEY, sort_key) {
+        builder = builder.key(sort_key_field, AttributeValue::S(sort_value.to_string()));
+    }
+
+    Ok(builder.send().await?)
 }
 
 /// Stream item from a table
