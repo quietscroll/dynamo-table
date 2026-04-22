@@ -25,7 +25,6 @@ Add to your `Cargo.toml`:
 [dependencies]
 dynamo_table = "0.3"
 aws-config = "1"
-aws-sdk-dynamodb = "1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```

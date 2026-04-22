@@ -137,6 +137,12 @@ pub use aws_config::{
 // Re-export aws-types for advanced configuration
 pub use aws_types::sdk_config::Builder as SdkConfigBuilder;
 
+// Re-export DynamoDB types
+pub use aws_sdk_dynamodb;
+
+// Re-export serde_dynamo for easy serialization/deserialization of DynamoDB items
+pub use serde_dynamo;
+
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use tokio::sync::OnceCell;
 
