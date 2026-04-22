@@ -274,3 +274,198 @@ async fn test_gsi_with_sort_key() {
     assert_eq!(results.items.len(), 1, "Should find exactly 1 item");
     assert_eq!(results.items[0].age, "age02");
 }
+
+/// Test GSI query pagination — second page uses exclusive_start_key.
+///
+/// Before ed62d2a, DynamoDB rejected the paginated request because the base
+/// table PK was missing from ExclusiveStartKey. This test exercises the
+/// `QueryBuilder::for_gsi` path fixed in helpers.rs.
+#[tokio::test]
+#[serial]
+async fn test_gsi_pagination_second_page() {
+    setup_gsi_table().await;
+
+    let user_id = "gsi_page_user";
+
+    // Insert 5 items in sort-key order so pages are deterministic.
+    let mut ages: Vec<String> = (0..5).map(|i| format!("pg_age{:02}", i)).collect();
+    ages.sort();
+
+    for (i, age) in ages.iter().enumerate() {
+        let obj = TestGSIObject {
+            game: format!("pg_game{}", i),
+            age: age.clone(),
+            user_id: user_id.to_string(),
+            created_at: format!("2024-01-{:02}T00:00:00Z", i + 1),
+            ux: "pg_test".to_string(),
+        };
+        obj.add_item().await.unwrap();
+    }
+
+    // Page 1: limit 2
+    let page1 = TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(2), None)
+        .await
+        .unwrap();
+
+    assert_eq!(page1.items.len(), 2, "page 1 should have 2 items");
+    assert!(
+        page1.last_evaluated_key.is_some(),
+        "last_evaluated_key must be set for page 1"
+    );
+
+    // Extract the sort key of the last item to use as exclusive_start_key.
+    let exclusive_start = page1
+        .last_evaluated_key
+        .as_ref()
+        .and_then(|(_, sk)| sk.clone())
+        .expect("sort key must be present in last_evaluated_key");
+
+    // Page 2: must not fail and must start after the first page.
+    let page2 =
+        TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(2), Some(exclusive_start))
+            .await
+            .unwrap();
+
+    assert_eq!(page2.items.len(), 2, "page 2 should have 2 items");
+
+    // Items on page 2 come after those on page 1.
+    assert!(
+        page2.items[0].age > page1.items[1].age,
+        "page 2 items must sort after page 1 items"
+    );
+}
+
+/// Test GSI reverse-query pagination — second page uses exclusive_start_key.
+///
+/// Exercises the same `QueryBuilder::for_gsi` path with `scan_index_forward = false`.
+#[tokio::test]
+#[serial]
+async fn test_gsi_pagination_reverse_second_page() {
+    setup_gsi_table().await;
+
+    let user_id = "gsi_rev_page_user";
+
+    let mut ages: Vec<String> = (0..5).map(|i| format!("rp_age{:02}", i)).collect();
+    ages.sort();
+
+    for (i, age) in ages.iter().enumerate() {
+        let obj = TestGSIObject {
+            game: format!("rp_game{}", i),
+            age: age.clone(),
+            user_id: user_id.to_string(),
+            created_at: format!("2024-02-{:02}T00:00:00Z", i + 1),
+            ux: "rp_test".to_string(),
+        };
+        obj.add_item().await.unwrap();
+    }
+
+    // Page 1 (descending): limit 2 → should return the two largest ages.
+    let page1 =
+        TestGSIObject::reverse_query_gsi_items(user_id.to_string(), None, Some(2), None)
+            .await
+            .unwrap();
+
+    assert_eq!(page1.items.len(), 2, "reverse page 1 should have 2 items");
+    assert!(page1.items[0].age > page1.items[1].age, "should be descending");
+    assert!(
+        page1.last_evaluated_key.is_some(),
+        "last_evaluated_key must be set"
+    );
+
+    let exclusive_start = page1
+        .last_evaluated_key
+        .as_ref()
+        .and_then(|(_, sk)| sk.clone())
+        .expect("sort key required");
+
+    // Page 2 must not fail and items must be smaller than the last item on page 1.
+    let page2 = TestGSIObject::reverse_query_gsi_items(
+        user_id.to_string(),
+        None,
+        Some(2),
+        Some(exclusive_start),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page2.items.len(), 2, "reverse page 2 should have 2 items");
+    assert!(
+        page2.items[0].age < page1.items[1].age,
+        "page 2 items must sort before the last item on page 1"
+    );
+}
+
+/// Test GSI query_with_filter pagination — second page uses exclusive_start_key.
+///
+/// Exercises the direct fix in gsi.rs that always includes the base-table PK
+/// in ExclusiveStartKey for the filter code path.
+#[tokio::test]
+#[serial]
+async fn test_gsi_pagination_with_filter_second_page() {
+    setup_gsi_table().await;
+
+    let user_id = "gsi_filter_page_user";
+
+    // Insert 6 items; all have ux = "keep" so none are filtered out.
+    let mut ages: Vec<String> = (0..6).map(|i| format!("fp_age{:02}", i)).collect();
+    ages.sort();
+
+    for (i, age) in ages.iter().enumerate() {
+        let obj = TestGSIObject {
+            game: format!("fp_game{}", i),
+            age: age.clone(),
+            user_id: user_id.to_string(),
+            created_at: format!("2024-03-{:02}T00:00:00Z", i + 1),
+            ux: "keep".to_string(),
+        };
+        obj.add_item().await.unwrap();
+    }
+
+    let filter_expr = "ux = :ux_val".to_string();
+    let mut filter_vals = HashMap::new();
+    filter_vals.insert(":ux_val".to_string(), "keep".to_string());
+
+    // Page 1
+    let page1 = TestGSIObject::query_gsi_items_with_filter(
+        user_id.to_string(),
+        None,
+        None,
+        Some(2),
+        true,
+        filter_expr.clone(),
+        filter_vals.clone(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page1.items.len(), 2, "filter page 1 should have 2 items");
+    assert!(
+        page1.last_evaluated_key.is_some(),
+        "last_evaluated_key must be set for filter page 1"
+    );
+
+    let exclusive_start = page1
+        .last_evaluated_key
+        .as_ref()
+        .and_then(|(_, sk)| sk.clone())
+        .expect("sort key required");
+
+    // Page 2 must not fail (this is what broke before the fix).
+    let page2 = TestGSIObject::query_gsi_items_with_filter(
+        user_id.to_string(),
+        None,
+        Some(exclusive_start),
+        Some(2),
+        true,
+        filter_expr,
+        filter_vals,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page2.items.len(), 2, "filter page 2 should have 2 items");
+    assert!(
+        page2.items[0].age > page1.items[1].age,
+        "filter page 2 items must sort after filter page 1 items"
+    );
+}

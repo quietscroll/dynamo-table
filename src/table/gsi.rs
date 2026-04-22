@@ -206,14 +206,20 @@ where
         .filter_expression(filter_expression)
         .limit(limit as i32);
 
-    // Set exclusive start key for pagination if provided
+    // Set exclusive start key for pagination if provided.
+    // DynamoDB requires all key attributes of both the base table and the index:
+    //   - GSI partition key (always)
+    //   - GSI sort key (when present)
+    //   - Table partition key (always; used as the cursor within the GSI partition)
     if let Some(start_key) = exclusive_start_key {
+        builder = builder
+            .exclusive_start_key(
+                T::GSI_PARTITION_KEY,
+                AttributeValue::S(gsi_partition_key.clone()),
+            )
+            .exclusive_start_key(T::PARTITION_KEY, AttributeValue::S(start_key.clone()));
         if let Some(gsi_sort_key_field) = T::GSI_SORT_KEY {
             builder = builder
-                .exclusive_start_key(
-                    T::GSI_PARTITION_KEY,
-                    AttributeValue::S(gsi_partition_key.clone()),
-                )
                 .exclusive_start_key(gsi_sort_key_field, AttributeValue::S(start_key));
         }
     }

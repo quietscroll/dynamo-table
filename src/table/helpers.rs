@@ -154,6 +154,9 @@ pub(crate) mod query_builder {
         index_name: Option<String>,
         partition_key_field: &'a str,
         sort_key_field: Option<&'a str>,
+        // When querying a GSI, DynamoDB requires the base table PK in ExclusiveStartKey in addition
+        // to the GSI PK. None means the index PK IS the table PK (for_table / for_index).
+        table_pk_field: Option<&'a str>,
     }
 
     impl<'a> QueryBuilder<'a> {
@@ -169,6 +172,7 @@ pub(crate) mod query_builder {
                 index_name: None,
                 partition_key_field: T::PARTITION_KEY,
                 sort_key_field: T::SORT_KEY,
+                table_pk_field: None,
             }
         }
 
@@ -184,6 +188,7 @@ pub(crate) mod query_builder {
                 index_name: Some(T::global_index_name()),
                 partition_key_field: T::GSI_PARTITION_KEY,
                 sort_key_field: T::GSI_SORT_KEY,
+                table_pk_field: Some(T::PARTITION_KEY),
             }
         }
 
@@ -199,6 +204,7 @@ pub(crate) mod query_builder {
                 index_name: Some(index_name),
                 partition_key_field: T::PARTITION_KEY,
                 sort_key_field: T::SORT_KEY,
+                table_pk_field: None,
             }
         }
 
@@ -237,15 +243,21 @@ pub(crate) mod query_builder {
                 builder = builder.index_name(index_name);
             }
 
-            // Handle exclusive start key
+            // Handle exclusive start key.
+            // For GSI queries, DynamoDB requires all key attributes of both the index and the base
+            // table in ExclusiveStartKey. `table_pk_field` carries the base-table PK name when
+            // `partition_key_field` is a GSI key rather than the table PK.
             if let Some(start_key) = exclusive_start_key {
+                let table_pk = self.table_pk_field.unwrap_or(self.partition_key_field);
+                builder = builder
+                    .exclusive_start_key(
+                        self.partition_key_field,
+                        AttributeValue::S(partition_key.clone()),
+                    )
+                    .exclusive_start_key(table_pk, AttributeValue::S(start_key.clone()));
                 if let Some(sort_key_field) = self.sort_key_field {
-                    builder = builder
-                        .exclusive_start_key(
-                            self.partition_key_field,
-                            AttributeValue::S(partition_key.clone()),
-                        )
-                        .exclusive_start_key(sort_key_field, AttributeValue::S(start_key));
+                    builder =
+                        builder.exclusive_start_key(sort_key_field, AttributeValue::S(start_key));
                 }
             }
 
