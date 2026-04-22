@@ -209,6 +209,11 @@ where
     result.total_duration = start_time.elapsed();
     result.retry_count = retry_count;
 
+    #[cfg(feature = "consumed_capacity_stats")]
+    for capacity in &result.consumed_capacity {
+        crate::consumed_capacity::stats::record(capacity);
+    }
+
     Ok(result)
 }
 
@@ -419,6 +424,11 @@ where
 
     result.total_duration = start_time.elapsed();
     result.retry_count = retry_count;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    for capacity in &result.consumed_capacity {
+        crate::consumed_capacity::stats::record(capacity);
+    }
 
     Ok(result)
 }

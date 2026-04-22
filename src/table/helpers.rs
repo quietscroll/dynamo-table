@@ -145,7 +145,7 @@ pub(crate) mod expressions {
 pub(crate) mod query_builder {
     use super::{DynamoTable, GSITable, expressions};
     use aws_sdk_dynamodb::operation::query::builders::QueryFluentBuilder;
-    use aws_sdk_dynamodb::types::{AttributeValue, Select};
+    use aws_sdk_dynamodb::types::{AttributeValue, ReturnConsumedCapacity, Select};
     use std::collections::HashMap;
     use std::fmt;
 
@@ -225,7 +225,11 @@ pub(crate) mod query_builder {
                 .query()
                 .table_name(self.table_name)
                 .select(select)
-                .set_return_consumed_capacity(None)
+                .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+                    ReturnConsumedCapacity::Total
+                } else {
+                    ReturnConsumedCapacity::None
+                })
                 .scan_index_forward(scan_index_forward)
                 .limit(limit as i32);
 
@@ -267,7 +271,11 @@ pub(crate) mod query_builder {
                 .query()
                 .table_name(self.table_name)
                 .select(Select::Count)
-                .set_return_consumed_capacity(None);
+                .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+                    ReturnConsumedCapacity::Total
+                } else {
+                    ReturnConsumedCapacity::None
+                });
 
             if let Some(ref index_name) = self.index_name {
                 builder = builder.index_name(index_name);

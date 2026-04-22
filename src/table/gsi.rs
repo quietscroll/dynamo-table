@@ -1,4 +1,4 @@
-use aws_sdk_dynamodb::types::{AttributeValue, Select};
+use aws_sdk_dynamodb::types::{AttributeValue, ReturnConsumedCapacity, Select};
 use serde::Serialize;
 use serde_dynamo::to_item;
 use std::{collections::HashMap, fmt, future::Future};
@@ -152,6 +152,9 @@ where
         .send()
         .await?;
 
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
+
     Ok(OutputItems::from((result, limit)))
 }
 
@@ -194,7 +197,11 @@ where
         // Secondary indexes only expose their projected attributes; DynamoDB rejects AllAttributes.
         // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SQLtoNoSQL.SelectingAttributes.html
         .select(Select::AllProjectedAttributes)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .scan_index_forward(scan_index_forward)
         .filter_expression(filter_expression)
         .limit(limit as i32);
@@ -233,6 +240,9 @@ where
 
     let result = builder.send().await?;
 
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
+
     Ok(OutputItems::from((result, limit)))
 }
 
@@ -251,6 +261,9 @@ where
         .build_count_query(client, gsi_partition_key)
         .send()
         .await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(result.count as usize)
 }

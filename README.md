@@ -15,6 +15,7 @@ A high-level, type-safe DynamoDB table abstraction for Rust with support for bat
 - **Optimistic locking**: Conditional expression support for safe concurrent updates
 - **Automatic retries**: Exponential backoff with adaptive retry mode
 - **Simple initialization**: Global client pattern with easy setup or auto-initialization
+- **Consumed capacity tracking**: Global atomic counters for read/write capacity units across every operation, with `tracing`-based logging and shutdown reporting via `Drop`
 
 ## Installation
 
@@ -765,6 +766,71 @@ async fn error_handling_examples() -> Result<(), Error> {
 }
 ```
 
+## Consumed Capacity Tracking
+
+Enabled by default via the `consumed_capacity_stats` feature, the library records read and write capacity units consumed by every DynamoDB operation into global lock-free atomic counters.
+
+### Querying Counters
+
+```rust
+use dynamo_table::{read_capacity_units, write_capacity_units, total_capacity_units, operation_count};
+
+// After running some operations:
+println!("Read CU:    {:.2}", read_capacity_units());
+println!("Write CU:   {:.2}", write_capacity_units());
+println!("Total CU:   {:.2}", total_capacity_units());
+println!("Operations: {}", operation_count());
+```
+
+### Snapshot Struct
+
+```rust
+use dynamo_table::consumed_capacity_stats;
+
+let stats = consumed_capacity_stats();
+// stats.read_capacity_units  -> f64
+// stats.write_capacity_units -> f64
+// stats.total_capacity_units -> f64
+// stats.operation_count      -> u64
+```
+
+### Logging with `tracing`
+
+```rust
+use dynamo_table::log_stats;
+
+// Emit a structured tracing::info! event:
+//   read_cu=1.5 write_cu=3.0 total_cu=4.5 operations=7 message="DynamoDB consumed capacity"
+log_stats();
+```
+
+### Automatic Shutdown Logging via `Drop`
+
+Hold a `CapacityStatsGuard` for the lifetime of your program. When it drops at program exit, it automatically calls `log_stats()`:
+
+```rust
+use dynamo_table::CapacityStatsGuard;
+
+#[tokio::main]
+async fn main() -> Result<(), dynamo_table::Error> {
+    // Stats are emitted to tracing when this guard drops at the end of main
+    let _stats_guard = CapacityStatsGuard::new();
+
+    // ... run your application ...
+
+    Ok(())
+}
+```
+
+### Disabling the Feature
+
+To opt out entirely and avoid the `tracing` dependency:
+
+```toml
+[dependencies]
+dynamo_table = { version = "0.3", default-features = false }
+```
+
 ## Performance Tips
 
 1. **Use batch operations** for multiple items to reduce API calls and costs
@@ -809,7 +875,24 @@ async fn error_handling_examples() -> Result<(), Error> {
 
 **Utility:**
 - `increment_multiple(pk, sk, fields)` - Atomic counter operations
+- `remove_attributes(attributes)` - Remove one or more attributes from an item
 - `dynamodb_client()` - Get client for this table (can be overridden)
+
+### Consumed Capacity (`consumed_capacity_stats` feature)
+
+**Global functions:**
+- `read_capacity_units() -> f64` - Total read CU consumed since startup
+- `write_capacity_units() -> f64` - Total write CU consumed since startup
+- `total_capacity_units() -> f64` - Combined read + write CU
+- `operation_count() -> u64` - Number of tracked operations
+- `consumed_capacity_stats() -> CapacityStats` - Point-in-time snapshot
+- `log_stats()` - Emit a `tracing::info!` event with all counters
+- `record(&ConsumedCapacity)` - Manually record a capacity value
+- `record_read(f64)` / `record_write(f64)` - Record capacity by type
+
+**Types:**
+- `CapacityStats` - Snapshot struct (`read_capacity_units`, `write_capacity_units`, `total_capacity_units`, `operation_count`)
+- `CapacityStatsGuard` - Calls `log_stats()` when dropped; hold for program lifetime
 
 ### GSITable Trait Methods
 

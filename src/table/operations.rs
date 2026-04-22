@@ -857,15 +857,24 @@ where
     validation::validate_table_keys::<T>();
     let item: HashMap<String, AttributeValue> = to_item(payload)?;
 
-    let result = T::dynamodb_client()
+    let output = T::dynamodb_client()
         .await
         .put_item()
         .table_name(T::TABLE)
         .return_values(ReturnValue::None)
-        .return_consumed_capacity(ReturnConsumedCapacity::None)
-        .set_item(Some(item));
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
+        .set_item(Some(item))
+        .send()
+        .await?;
 
-    Ok(result.send().await?)
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(output.consumed_capacity.as_ref());
+
+    Ok(output)
 }
 
 /// Get a single item from a DynamoDB table by its primary key
@@ -932,7 +941,11 @@ where
         .await
         .get_item()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .key(
             T::PARTITION_KEY,
             AttributeValue::S(partition_key.to_string()),
@@ -943,6 +956,9 @@ where
     }
 
     let result = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     if let Some(item) = result.item {
         let item: T = from_item(item)?;
@@ -1106,6 +1122,9 @@ where
 
     let result = builder.send().await?;
 
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
+
     Ok(OutputItems::from((result, limit)))
 }
 
@@ -1136,7 +1155,11 @@ where
         .await
         .query()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .scan_index_forward(scan_index_forward)
         .limit(limit as i32)
         .key_condition_expression(format!(
@@ -1161,6 +1184,9 @@ where
     }
 
     let result = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(OutputItems::from((result, limit)))
 }
@@ -1191,7 +1217,11 @@ where
         .await
         .query()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .scan_index_forward(scan_index_forward)
         .limit(limit as i32)
         .key_condition_expression(format!("{} = :hash_value", T::PARTITION_KEY))
@@ -1215,6 +1245,9 @@ where
     }
 
     let result = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(OutputItems::from((result, limit)))
 }
@@ -1245,7 +1278,11 @@ where
         .await
         .query()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .scan_index_forward(scan_index_forward)
         .limit(limit as i32)
         .key_condition_expression(format!(
@@ -1269,6 +1306,9 @@ where
     }
 
     let result = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(OutputItems::from((result, limit)))
 }
@@ -1299,7 +1339,11 @@ where
         .await
         .query()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .scan_index_forward(scan_index_forward)
         .limit(limit as i32)
         .key_condition_expression(format!(
@@ -1323,6 +1367,9 @@ where
     }
 
     let result = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(OutputItems::from((result, limit)))
 }
@@ -1358,6 +1405,9 @@ where
     .await
     .send()
     .await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(OutputItems::from((result, limit)))
 }
@@ -1433,7 +1483,11 @@ where
         .await
         .delete_item()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .key(
             T::PARTITION_KEY,
             AttributeValue::S(partition_key.to_string()),
@@ -1443,7 +1497,12 @@ where
         builder = builder.key(sort_key, AttributeValue::S(sort_value.to_string()));
     }
 
-    Ok(builder.send().await?)
+    let output = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(output.consumed_capacity.as_ref());
+
+    Ok(output)
 }
 
 /// Increment field by value
@@ -1491,7 +1550,11 @@ where
         .await
         .update_item()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .set_return_values(Some(ReturnValue::None))
         .key(
             T::PARTITION_KEY,
@@ -1514,7 +1577,12 @@ where
         builder = builder.key(sort_key, AttributeValue::S(sort_value.to_string()));
     }
 
-    Ok(builder.send().await?)
+    let output = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(output.consumed_capacity.as_ref());
+
+    Ok(output)
 }
 
 /// Update specific fields of an item in a DynamoDB table
@@ -1611,7 +1679,11 @@ where
         .await
         .update_item()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .set_return_values(Some(ReturnValue::None))
         .key(
             T::PARTITION_KEY,
@@ -1630,7 +1702,12 @@ where
         builder = builder.key(sort_key, AttributeValue::S(sort_value.to_string()));
     }
 
-    Ok(builder.send().await?)
+    let output = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(output.consumed_capacity.as_ref());
+
+    Ok(output)
 }
 
 /// Update an item with a custom update expression and values
@@ -1671,7 +1748,11 @@ where
         .await
         .update_item()
         .table_name(T::TABLE)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .set_return_values(Some(ReturnValue::None))
         .key(
             T::PARTITION_KEY,
@@ -1700,7 +1781,12 @@ where
         }
     }
 
-    Ok(builder.send().await?)
+    let output = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(output.consumed_capacity.as_ref());
+
+    Ok(output)
 }
 
 /// Count items by partition key
@@ -1718,6 +1804,9 @@ where
         .build_count_query(client, partition_key.to_string())
         .send()
         .await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(result.count as usize)
 }
@@ -1738,7 +1827,11 @@ where
         .table_name(T::TABLE)
         // Scans currently operate on the base table, so requesting all attributes is always valid.
         .select(Select::AllAttributes)
-        .set_return_consumed_capacity(None);
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        });
 
     // Set exclusive start key for pagination if provided
     if let Some((partition_key, sort_key)) = exclusive_start_key {
@@ -1776,6 +1869,9 @@ where
         .limit(limit as i32)
         .send()
         .await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
 
     Ok(OutputItems::from((result, limit)))
 }
@@ -1818,6 +1914,9 @@ where
 
     let result = builder.send().await?;
 
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
+
     Ok(OutputItems::from((result, limit)))
 }
 
@@ -1849,14 +1948,23 @@ where
             AttributeValue::S(partition_key.to_string()),
         )
         .update_expression(remove_expr)
-        .set_return_consumed_capacity(None)
+        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
+            ReturnConsumedCapacity::Total
+        } else {
+            ReturnConsumedCapacity::None
+        })
         .set_return_values(Some(ReturnValue::None));
 
     if let (Some(sort_key_field), Some(sort_value)) = (T::SORT_KEY, sort_key) {
         builder = builder.key(sort_key_field, AttributeValue::S(sort_value.to_string()));
     }
 
-    Ok(builder.send().await?)
+    let output = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(output.consumed_capacity.as_ref());
+
+    Ok(output)
 }
 
 /// Stream item from a table

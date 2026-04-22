@@ -16,6 +16,8 @@
 //! - **Streaming**: Handle large result sets with async streams
 //! - **Reserved word validation**: Debug-mode checks for DynamoDB reserved words
 //! - **GSI support**: Query and scan Global Secondary Indexes
+//! - **Consumed capacity tracking**: Global atomic counters for every operation, with `tracing`
+//!   logging and automatic shutdown reporting via [`CapacityStatsGuard`] (feature `consumed_capacity_stats`, on by default)
 //!
 //! ## Quick Start
 //!
@@ -99,6 +101,17 @@
 
 mod error;
 pub use error::Error;
+
+/// Consumed capacity tracking via global atomic counters (requires `consumed_capacity_stats` feature).
+#[cfg(feature = "consumed_capacity_stats")]
+pub mod consumed_capacity;
+
+#[cfg(feature = "consumed_capacity_stats")]
+pub use consumed_capacity::stats::{
+    CapacityStats, CapacityStatsGuard, log_stats, operation_count, read_capacity_units, record,
+    record_from_option, record_read, record_write, stats as consumed_capacity_stats,
+    total_capacity_units, write_capacity_units,
+};
 
 /// Generic table module
 pub mod table;

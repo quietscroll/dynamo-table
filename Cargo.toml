@@ -11,7 +11,12 @@ license = "MIT OR Apache-2.0"
 keywords = ["dynamodb", "aws", "database", "async", "table"]
 categories = ["database", "asynchronous", "api-bindings"]
 
+[features]
+default = ["consumed_capacity_stats"]
+consumed_capacity_stats = ["dep:tracing"]
+
 [dependencies]
+tracing = { version = "0.1", optional = true }
 aws-config = { version = "1", default-features = false, features = ["rustls"] }
 aws-sdk-dynamodb = { version = "1", default-features = false, features = [
   "rustls",
