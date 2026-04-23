@@ -23,8 +23,8 @@ use crate::table::types::{CompositeKey, OutputItems, RetryConfig};
 /// Generic table trait - NOW FULLY GENERIC OVER PK AND SK TYPES!
 pub trait DynamoTable: Serialize + DeserializeOwned + Send + Sync
 where
-    Self::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
-    Self::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    Self::PK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
+    Self::SK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
 {
     /// Associated partition key type
     type PK;
@@ -1069,6 +1069,7 @@ where
         partition_key.to_string(),
         sort_key.map(|sk| sk.to_string()),
         exclusive_start_key.map(|sk| sk.to_string()),
+        None,
         limit,
         scan_index_forward,
     )

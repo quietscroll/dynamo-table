@@ -4,7 +4,7 @@ use serde_dynamo::to_item;
 use std::{collections::HashMap, fmt, future::Future};
 
 use crate::table::helpers::{query_builder, validation};
-use crate::table::types::OutputItems;
+use crate::table::types::{Cursor, OutputItems};
 use crate::{Error, table::DynamoTable};
 
 /// Global Secondary Index (GSI) table trait for querying on alternate keys
@@ -35,33 +35,35 @@ pub trait GSITable: DynamoTable {
         }
     }
 
-    /// Query items using the GSI
+    /// Query items using the GSI.
+    ///
+    /// Use `OutputItems::start_cursor()` to request the next page.
     fn query_gsi_items(
         gsi_partition_key: String,
         gsi_sort_key: Option<String>,
         limit: Option<u16>,
-        exclusive_start_key: Option<String>,
+        exclusive_start_cursor: Option<Cursor<Self>>,
     ) -> impl Future<Output = Result<OutputItems<Self>, Error>> {
         query_gsi_items::<Self>(
             gsi_partition_key,
             gsi_sort_key,
-            exclusive_start_key,
+            exclusive_start_cursor,
             limit,
             true,
         )
     }
 
-    /// Query items using the GSI in reverse order
+    /// Query items using the GSI in reverse order.
     fn reverse_query_gsi_items(
         gsi_partition_key: String,
         gsi_sort_key: Option<String>,
         limit: Option<u16>,
-        exclusive_start_key: Option<String>,
+        exclusive_start_cursor: Option<Cursor<Self>>,
     ) -> impl Future<Output = Result<OutputItems<Self>, Error>> {
         query_gsi_items::<Self>(
             gsi_partition_key,
             gsi_sort_key,
-            exclusive_start_key,
+            exclusive_start_cursor,
             limit,
             false,
         )
@@ -75,11 +77,13 @@ pub trait GSITable: DynamoTable {
         query_gsi_item::<Self>(gsi_partition_key, gsi_sort_key)
     }
 
-    /// Query items using the GSI with filter expression
+    /// Query items using the GSI with filter expression.
+    ///
+    /// Use `OutputItems::start_cursor()` to request the next page.
     fn query_gsi_items_with_filter<U: Serialize>(
         gsi_partition_key: String,
         gsi_sort_key: Option<String>,
-        exclusive_start_key: Option<String>,
+        exclusive_start_cursor: Option<Cursor<Self>>,
         limit: Option<u16>,
         scan_index_forward: bool,
         filter_expression: String,
@@ -88,7 +92,7 @@ pub trait GSITable: DynamoTable {
         query_gsi_items_with_filter::<Self, U>(
             gsi_partition_key,
             gsi_sort_key,
-            exclusive_start_key,
+            exclusive_start_cursor,
             limit,
             scan_index_forward,
             filter_expression,
@@ -112,8 +116,7 @@ where
     T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
     T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
 {
-    let mut output =
-        query_gsi_items::<T>(gsi_partition_key, gsi_sort_key, None, Some(1), true).await?;
+    let mut output = query_gsi_items::<T>(gsi_partition_key, gsi_sort_key, None, Some(1), true).await?;
     Ok(output.items.pop())
 }
 
@@ -121,7 +124,7 @@ where
 async fn query_gsi_items<T>(
     gsi_partition_key: String,
     gsi_sort_key: Option<String>,
-    exclusive_start_key: Option<String>,
+    exclusive_start_cursor: Option<Cursor<T>>,
     limit: Option<u16>,
     scan_index_forward: bool,
 ) -> Result<OutputItems<T>, Error>
@@ -145,7 +148,16 @@ where
             client,
             gsi_partition_key,
             gsi_sort_key,
-            exclusive_start_key,
+            exclusive_start_cursor.as_ref().map(|cursor| {
+                cursor
+                    .sk
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| cursor.pk.to_string())
+            }),
+            exclusive_start_cursor
+                .as_ref()
+                .map(|cursor| cursor.pk.to_string()),
             limit,
             scan_index_forward,
         )
@@ -162,7 +174,7 @@ where
 pub async fn query_gsi_items_with_filter<T, U>(
     gsi_partition_key: String,
     gsi_sort_key: Option<String>,
-    exclusive_start_key: Option<String>,
+    exclusive_start_cursor: Option<Cursor<T>>,
     limit: Option<u16>,
     scan_index_forward: bool,
     filter_expression: String,
@@ -194,8 +206,6 @@ where
         .query()
         .table_name(T::TABLE)
         .index_name(T::global_index_name())
-        // Secondary indexes only expose their projected attributes; DynamoDB rejects AllAttributes.
-        // See https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SQLtoNoSQL.SelectingAttributes.html
         .select(Select::AllProjectedAttributes)
         .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
             ReturnConsumedCapacity::Total
@@ -206,25 +216,26 @@ where
         .filter_expression(filter_expression)
         .limit(limit as i32);
 
-    // Set exclusive start key for pagination if provided.
-    // DynamoDB requires all key attributes of both the base table and the index:
-    //   - GSI partition key (always)
-    //   - GSI sort key (when present)
-    //   - Table partition key (always; used as the cursor within the GSI partition)
-    if let Some(start_key) = exclusive_start_key {
+    if let Some(cursor) = exclusive_start_cursor {
+        let gsi_cursor = cursor
+            .sk
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| cursor.pk.to_string());
+
         builder = builder
             .exclusive_start_key(
                 T::GSI_PARTITION_KEY,
                 AttributeValue::S(gsi_partition_key.clone()),
             )
-            .exclusive_start_key(T::PARTITION_KEY, AttributeValue::S(start_key.clone()));
+            .exclusive_start_key(T::PARTITION_KEY, AttributeValue::S(cursor.pk.to_string()));
+
         if let Some(gsi_sort_key_field) = T::GSI_SORT_KEY {
             builder = builder
-                .exclusive_start_key(gsi_sort_key_field, AttributeValue::S(start_key));
+                .exclusive_start_key(gsi_sort_key_field, AttributeValue::S(gsi_cursor));
         }
     }
 
-    // Build key condition expression using GSI keys
     if let (Some(gsi_sort_key_name), Some(gsi_sort_value)) = (T::GSI_SORT_KEY, gsi_sort_key) {
         builder = builder
             .key_condition_expression(format!(

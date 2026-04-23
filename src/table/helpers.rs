@@ -215,6 +215,7 @@ pub(crate) mod query_builder {
             partition_key: String,
             sort_key: Option<String>,
             exclusive_start_key: Option<String>,
+            exclusive_start_table_pk: Option<String>,
             limit: u16,
             scan_index_forward: bool,
         ) -> QueryFluentBuilder {
@@ -248,13 +249,18 @@ pub(crate) mod query_builder {
             // table in ExclusiveStartKey. `table_pk_field` carries the base-table PK name when
             // `partition_key_field` is a GSI key rather than the table PK.
             if let Some(start_key) = exclusive_start_key {
-                let table_pk = self.table_pk_field.unwrap_or(self.partition_key_field);
-                builder = builder
-                    .exclusive_start_key(
-                        self.partition_key_field,
-                        AttributeValue::S(partition_key.clone()),
-                    )
-                    .exclusive_start_key(table_pk, AttributeValue::S(start_key.clone()));
+                builder = builder.exclusive_start_key(
+                    self.partition_key_field,
+                    AttributeValue::S(partition_key.clone()),
+                );
+
+                if let Some(table_pk_field) = self.table_pk_field {
+                    let table_pk_value =
+                        exclusive_start_table_pk.unwrap_or_else(|| start_key.clone());
+                    builder = builder
+                        .exclusive_start_key(table_pk_field, AttributeValue::S(table_pk_value));
+                }
+
                 if let Some(sort_key_field) = self.sort_key_field {
                     builder =
                         builder.exclusive_start_key(sort_key_field, AttributeValue::S(start_key));

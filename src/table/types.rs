@@ -1,6 +1,8 @@
 use aws_sdk_dynamodb::operation;
-use serde_dynamo::from_items;
-use std::{fmt, time::Duration};
+use aws_sdk_dynamodb::types::AttributeValue;
+use serde::de::DeserializeOwned;
+use serde_dynamo::{from_attribute_value, from_items};
+use std::{collections::HashMap, fmt, time::Duration};
 
 use crate::table::DynamoTable;
 
@@ -88,17 +90,62 @@ where
     }
 }
 
+fn parse_last_evaluated_key<T>(
+    last_evaluated_key: Option<HashMap<String, AttributeValue>>,
+) -> Option<(T::PK, Option<T::SK>)>
+where
+    T: DynamoTable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
+{
+    let attributes = last_evaluated_key?;
+
+    let pk = attributes.get(T::PARTITION_KEY).and_then(|value| {
+        from_attribute_value::<_, T::PK>(value.clone())
+            .map_err(|error| {
+                eprintln!(
+                    "WARNING: Failed to deserialize last_evaluated_key partition key '{}' for table '{}': {}",
+                    T::PARTITION_KEY,
+                    T::TABLE,
+                    error
+                );
+                error
+            })
+            .ok()
+    })?;
+
+    let sk = if let Some(sort_key_name) = T::SORT_KEY {
+        attributes.get(sort_key_name).and_then(|value| {
+            from_attribute_value::<_, T::SK>(value.clone())
+                .map_err(|error| {
+                    eprintln!(
+                        "WARNING: Failed to deserialize last_evaluated_key sort key '{}' for table '{}': {}",
+                        sort_key_name,
+                        T::TABLE,
+                        error
+                    );
+                    error
+                })
+                .ok()
+        })
+    } else {
+        None
+    };
+
+    Some((pk, sk))
+}
+
 impl<T> From<(operation::scan::ScanOutput, u16)> for OutputItems<T>
 where
     T: DynamoTable,
-    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
-    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
 {
     fn from((output, limit): (operation::scan::ScanOutput, u16)) -> Self {
         if let Some(items) = output.items {
             let items: Vec<T> = from_items(items).unwrap_or_else(|e| {
                 if cfg!(debug_assertions) {
-                eprintln!("WARNING: Failed to deserialize scan results for table '{}': {}. This usually indicates a schema mismatch between the database and the model. Returning empty results.", T::TABLE, e);
+                    eprintln!("WARNING: Failed to deserialize scan results for table '{}': {}. This usually indicates a schema mismatch between the database and the model. Returning empty results.", T::TABLE, e);
 
                     panic!("Deserialization failed in debug mode for table '{}': {}", T::TABLE, e);
                 }
@@ -106,12 +153,7 @@ where
             });
             let count = output.count;
             let scanned_count = output.scanned_count;
-
-            let last_evaluated_key = if items.is_empty() || output.last_evaluated_key.is_none() {
-                None
-            } else {
-                items.last().map(|i| i.composite_key())
-            };
+            let last_evaluated_key = parse_last_evaluated_key::<T>(output.last_evaluated_key);
 
             Self {
                 items,
@@ -129,14 +171,14 @@ where
 impl<T> From<(operation::query::QueryOutput, u16)> for OutputItems<T>
 where
     T: DynamoTable,
-    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
-    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug + DeserializeOwned,
 {
     fn from((output, limit): (operation::query::QueryOutput, u16)) -> Self {
         if let Some(items) = output.items {
             let items: Vec<T> = from_items(items).unwrap_or_else(|e| {
                 if cfg!(debug_assertions) {
-                eprintln!("WARNING: Failed to deserialize query results for table '{}': {}. This usually indicates a schema mismatch between the database and the model. Returning empty results.", T::TABLE, e);
+                    eprintln!("WARNING: Failed to deserialize query results for table '{}': {}. This usually indicates a schema mismatch between the database and the model. Returning empty results.", T::TABLE, e);
 
                     panic!("Deserialization failed in debug mode for table '{}': {}", T::TABLE, e);
                 }
@@ -144,12 +186,7 @@ where
             });
             let count = output.count;
             let scanned_count = output.scanned_count;
-
-            let last_evaluated_key = if items.is_empty() || output.last_evaluated_key.is_none() {
-                None
-            } else {
-                items.last().map(|i| i.composite_key())
-            };
+            let last_evaluated_key = parse_last_evaluated_key::<T>(output.last_evaluated_key);
 
             Self {
                 items,

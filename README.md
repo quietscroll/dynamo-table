@@ -208,7 +208,7 @@ async fn query_examples() -> Result<(), Error> {
     }
 
     // Check if there are more results
-    if let Some(cursor) = result.last_evaluated_key {
+    if let Some(cursor) = result.start_cursor() {
         println!("More results available, cursor: {:?}", cursor);
     }
 
@@ -302,7 +302,7 @@ async fn composite_key_examples() -> Result<(), Error> {
 
 ### Global Secondary Indexes (GSI)
 
-Use GSI to query your data by alternate keys:
+Use GSI to query your data by alternate keys. For paginated GSI queries, pass `result.start_cursor()` back into the next call; DynamoDB requires the base-table PK in addition to the index key, so a raw string cursor is not sufficient:
 
 ```rust
 use dynamo_table::GSITable;
@@ -329,6 +329,14 @@ async fn gsi_examples() -> Result<(), Error> {
         None,
     ).await?;
 
+    // Request the next page by passing the typed cursor back in.
+    let next_page = User::query_gsi_items(
+        "user@example.com".to_string(),
+        None,
+        Some(10),
+        result.start_cursor(),
+    ).await?;
+
     // Query single item by GSI
     let user = User::query_gsi_item(
         "user@example.com".to_string(),
@@ -339,7 +347,7 @@ async fn gsi_examples() -> Result<(), Error> {
     let count = User::count_gsi_items("user@example.com".to_string()).await?;
 
     // Reverse query on GSI
-    let results = User::reverse_query_gsi_items(
+    let reverse_page = User::reverse_query_gsi_items(
         "user@example.com".to_string(),
         None,
         Some(10),
@@ -475,6 +483,16 @@ async fn filter_examples() -> Result<(), Error> {
         json!({ ":status": "verified" }),
     ).await?;
 
+    let filtered_gsi_next_page = User::query_gsi_items_with_filter(
+        "user@example.com".to_string(),
+        None,
+        filtered_gsi.start_cursor(),
+        Some(20),
+        true,
+        "account_status = :status".to_string(),
+        json!({ ":status": "verified" }),
+    ).await?;
+
     Ok(())
 }
 ```
@@ -581,8 +599,8 @@ async fn scan_examples() -> Result<(), Error> {
         }
 
         // Check for more pages
-        match result.last_evaluated_key {
-            Some(key) => cursor = Some(key),
+        match result.start_cursor() {
+            Some(next_cursor) => cursor = Some(next_cursor),
             None => break,
         }
     }
@@ -895,10 +913,10 @@ dynamo_table = { version = "0.3", default-features = false }
 
 ### GSITable Trait Methods
 
-- `query_gsi_items(...)` - Query using Global Secondary Index
+- `query_gsi_items(...)` - Query using Global Secondary Index with `Option<Cursor<T>>` pagination
 - `query_gsi_item(...)` - Query single item by GSI
-- `reverse_query_gsi_items(...)` - Reverse query on GSI
-- `query_gsi_items_with_filter(...)` - Query GSI with filter
+- `reverse_query_gsi_items(...)` - Reverse query on GSI with `Option<Cursor<T>>` pagination
+- `query_gsi_items_with_filter(...)` - Query GSI with filter and `Option<Cursor<T>>` pagination
 - `count_gsi_items(...)` - Count items by GSI key
 
 ## Examples

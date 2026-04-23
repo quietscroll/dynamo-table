@@ -314,15 +314,13 @@ async fn test_gsi_pagination_second_page() {
     );
 
     // Extract the sort key of the last item to use as exclusive_start_key.
-    let exclusive_start = page1
-        .last_evaluated_key
-        .as_ref()
-        .and_then(|(_, sk)| sk.clone())
-        .expect("sort key must be present in last_evaluated_key");
+    let cursor = page1
+        .start_cursor()
+        .expect("cursor must be present in last_evaluated_key");
 
     // Page 2: must not fail and must start after the first page.
     let page2 =
-        TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(2), Some(exclusive_start))
+        TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(2), Some(cursor))
             .await
             .unwrap();
 
@@ -372,18 +370,16 @@ async fn test_gsi_pagination_reverse_second_page() {
         "last_evaluated_key must be set"
     );
 
-    let exclusive_start = page1
-        .last_evaluated_key
-        .as_ref()
-        .and_then(|(_, sk)| sk.clone())
-        .expect("sort key required");
+    let cursor = page1
+        .start_cursor()
+        .expect("cursor must be present in last_evaluated_key");
 
     // Page 2 must not fail and items must be smaller than the last item on page 1.
     let page2 = TestGSIObject::reverse_query_gsi_items(
         user_id.to_string(),
         None,
         Some(2),
-        Some(exclusive_start),
+        Some(cursor),
     )
     .await
     .unwrap();
@@ -444,17 +440,15 @@ async fn test_gsi_pagination_with_filter_second_page() {
         "last_evaluated_key must be set for filter page 1"
     );
 
-    let exclusive_start = page1
-        .last_evaluated_key
-        .as_ref()
-        .and_then(|(_, sk)| sk.clone())
-        .expect("sort key required");
+    let cursor = page1
+        .start_cursor()
+        .expect("cursor must be present in last_evaluated_key");
 
     // Page 2 must not fail (this is what broke before the fix).
     let page2 = TestGSIObject::query_gsi_items_with_filter(
         user_id.to_string(),
         None,
-        Some(exclusive_start),
+        Some(cursor),
         Some(2),
         true,
         filter_expr,
@@ -468,4 +462,79 @@ async fn test_gsi_pagination_with_filter_second_page() {
         page2.items[0].age > page1.items[1].age,
         "filter page 2 items must sort after filter page 1 items"
     );
+}
+
+/// Test GSI filtered pagination preserves DynamoDB's real last evaluated key
+/// even when a page returns zero items after filtering.
+#[tokio::test]
+#[serial]
+async fn test_gsi_pagination_with_filter_empty_page_keeps_cursor() {
+    setup_gsi_table().await;
+
+    let user_id = "gsi_filter_empty_page_user";
+
+    let objects = vec![
+        TestGSIObject {
+            game: "empty_page_game0".to_string(),
+            age: "ep_age00".to_string(),
+            user_id: user_id.to_string(),
+            created_at: "2024-04-01T00:00:00Z".to_string(),
+            ux: "drop".to_string(),
+        },
+        TestGSIObject {
+            game: "empty_page_game1".to_string(),
+            age: "ep_age01".to_string(),
+            user_id: user_id.to_string(),
+            created_at: "2024-04-02T00:00:00Z".to_string(),
+            ux: "keep".to_string(),
+        },
+    ];
+
+    for obj in &objects {
+        obj.add_item().await.unwrap();
+    }
+
+    let filter_expr = "ux = :ux_val".to_string();
+    let mut filter_vals = HashMap::new();
+    filter_vals.insert(":ux_val".to_string(), "keep".to_string());
+
+    let page1 = TestGSIObject::query_gsi_items_with_filter(
+        user_id.to_string(),
+        None,
+        None,
+        Some(1),
+        true,
+        filter_expr.clone(),
+        filter_vals.clone(),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        page1.items.is_empty(),
+        "page 1 should be empty because the first evaluated item is filtered out"
+    );
+    assert!(
+        page1.last_evaluated_key.is_some(),
+        "page 1 must still expose the real DynamoDB cursor"
+    );
+
+    let cursor = page1
+        .start_cursor()
+        .expect("cursor must be present in last_evaluated_key");
+
+    let page2 = TestGSIObject::query_gsi_items_with_filter(
+        user_id.to_string(),
+        None,
+        Some(cursor),
+        Some(1),
+        true,
+        filter_expr,
+        filter_vals,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page2.items.len(), 1, "page 2 should return the kept item");
+    assert_eq!(page2.items[0].age, "ep_age01");
 }
