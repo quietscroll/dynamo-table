@@ -1,5 +1,8 @@
 # DynamoDB Table Abstraction
 
+[![CI](https://github.com/quietscroll/dynamo-table/actions/workflows/ci.yml/badge.svg)](https://github.com/quietscroll/dynamo-table/actions/workflows/ci.yml)
+[![docs.rs](https://img.shields.io/docsrs/dynamo_table)](https://docs.rs/dynamo_table)
+
 A high-level, type-safe DynamoDB table abstraction for Rust with support for batch operations, pagination, Global Secondary Indexes, and more.
 
 ## Features
