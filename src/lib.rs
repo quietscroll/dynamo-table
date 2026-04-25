@@ -144,6 +144,10 @@ pub use aws_sdk_dynamodb;
 pub use serde_dynamo;
 
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_smithy_http_client::{
+    Builder as SmithyHttpClientBuilder,
+    tls::{self, TlsContext, TrustStore, rustls_provider::CryptoMode},
+};
 use tokio::sync::OnceCell;
 
 /// Global DynamoDB client instance
@@ -183,10 +187,27 @@ async fn aws_config_defaults() -> SdkConfig {
 
     // Support LocalStack via AWS_PROFILE=localstack
     if std::env::var("AWS_PROFILE").unwrap_or_default() == "localstack" {
-        loader = loader.endpoint_url("http://127.0.0.1:4566");
+        loader = loader
+            .endpoint_url("http://127.0.0.1:4566")
+            .http_client(localstack_http_client());
     }
 
     loader.load().await
+}
+
+fn localstack_http_client() -> aws_smithy_runtime_api::client::http::SharedHttpClient {
+    // LocalStack test runs use plain HTTP, so native TLS roots are unnecessary.
+    // Disabling them avoids rustls startup panics on machines with unreadable or invalid
+    // system trust stores while preserving the same HTTP behavior for the local endpoint.
+    let tls_context = TlsContext::builder()
+        .with_trust_store(TrustStore::empty())
+        .build()
+        .expect("valid LocalStack TLS context");
+
+    SmithyHttpClientBuilder::new()
+        .tls_provider(tls::Provider::Rustls(CryptoMode::AwsLc))
+        .tls_context(tls_context)
+        .build_https()
 }
 
 /// Initialize the global DynamoDB client with a custom AWS config
