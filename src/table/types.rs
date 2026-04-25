@@ -103,11 +103,11 @@ where
     let pk = attributes.get(T::PARTITION_KEY).and_then(|value| {
         from_attribute_value::<_, T::PK>(value.clone())
             .map_err(|error| {
-                eprintln!(
-                    "WARNING: Failed to deserialize last_evaluated_key partition key '{}' for table '{}': {}",
-                    T::PARTITION_KEY,
-                    T::TABLE,
-                    error
+                tracing::warn!(
+                    partition_key = T::PARTITION_KEY,
+                    table = T::TABLE,
+                    error = %error,
+                    "Failed to deserialize last_evaluated_key partition key"
                 );
                 error
             })
@@ -118,11 +118,11 @@ where
         attributes.get(sort_key_name).and_then(|value| {
             from_attribute_value::<_, T::SK>(value.clone())
                 .map_err(|error| {
-                    eprintln!(
-                        "WARNING: Failed to deserialize last_evaluated_key sort key '{}' for table '{}': {}",
-                        sort_key_name,
-                        T::TABLE,
-                        error
+                    tracing::warn!(
+                        sort_key = sort_key_name,
+                        table = T::TABLE,
+                        error = %error,
+                        "Failed to deserialize last_evaluated_key sort key"
                     );
                     error
                 })
@@ -145,7 +145,11 @@ where
         if let Some(items) = output.items {
             let items: Vec<T> = from_items(items).unwrap_or_else(|e| {
                 if cfg!(debug_assertions) {
-                    eprintln!("WARNING: Failed to deserialize scan results for table '{}': {}. This usually indicates a schema mismatch between the database and the model. Returning empty results.", T::TABLE, e);
+                    tracing::error!(
+                        table = T::TABLE,
+                        error = %e,
+                        "Failed to deserialize scan results; this usually indicates a schema mismatch between the database and the model"
+                    );
 
                     panic!("Deserialization failed in debug mode for table '{}': {}", T::TABLE, e);
                 }
@@ -178,7 +182,11 @@ where
         if let Some(items) = output.items {
             let items: Vec<T> = from_items(items).unwrap_or_else(|e| {
                 if cfg!(debug_assertions) {
-                    eprintln!("WARNING: Failed to deserialize query results for table '{}': {}. This usually indicates a schema mismatch between the database and the model. Returning empty results.", T::TABLE, e);
+                    tracing::error!(
+                        table = T::TABLE,
+                        error = %e,
+                        "Failed to deserialize query results; this usually indicates a schema mismatch between the database and the model"
+                    );
 
                     panic!("Deserialization failed in debug mode for table '{}': {}", T::TABLE, e);
                 }
