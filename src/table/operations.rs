@@ -1565,11 +1565,14 @@ where
     let mut update_expressions: Vec<String> = Vec::with_capacity(fields.len());
 
     for (index, field) in fields.iter().enumerate() {
-        update_expressions.push(format!("{} = {} + :incr{}", field.0, field.0, index));
-        builder = builder.expression_attribute_values(
-            format!(":incr{index}"),
-            AttributeValue::N(format!("{}", field.1)),
-        );
+        let name_alias = format!("#n{index}");
+        update_expressions.push(format!("{name_alias} = {name_alias} + :incr{index}"));
+        builder = builder
+            .expression_attribute_names(&name_alias, field.0)
+            .expression_attribute_values(
+                format!(":incr{index}"),
+                AttributeValue::N(format!("{}", field.1)),
+            );
     }
 
     builder = builder.update_expression(format!("SET {}", update_expressions.join(",")));
@@ -1692,9 +1695,12 @@ where
         );
 
     for (index, (k, v)) in item.into_iter().enumerate() {
+        let name_alias = format!("#n{index}");
         let val = format!(":val{index}");
-        update_expressions.push(format!("{k} = {val}"));
-        builder = builder.expression_attribute_values(val, v);
+        update_expressions.push(format!("{name_alias} = {val}"));
+        builder = builder
+            .expression_attribute_names(name_alias, k)
+            .expression_attribute_values(val, v);
     }
 
     builder = builder.update_expression(format!("SET {}", update_expressions.join(",")));
@@ -1761,9 +1767,12 @@ where
         );
 
     for (index, (k, v)) in item.into_iter().enumerate() {
+        let name_alias = format!("#n{index}");
         let val = format!(":val{index}");
-        update_expressions.push(format!("{k} = {val}"));
-        builder = builder.expression_attribute_values(val, v);
+        update_expressions.push(format!("{name_alias} = {val}"));
+        builder = builder
+            .expression_attribute_names(name_alias, k)
+            .expression_attribute_values(val, v);
     }
 
     builder = builder.update_expression(format!("SET {}", update_expressions.join(",")));
