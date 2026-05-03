@@ -116,7 +116,8 @@ where
     T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
     T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
 {
-    let mut output = query_gsi_items::<T>(gsi_partition_key, gsi_sort_key, None, Some(1), true).await?;
+    let mut output =
+        query_gsi_items::<T>(gsi_partition_key, gsi_sort_key, None, Some(1), true).await?;
     Ok(output.items.pop())
 }
 
@@ -231,8 +232,8 @@ where
             .exclusive_start_key(T::PARTITION_KEY, AttributeValue::S(cursor.pk.to_string()));
 
         if let Some(gsi_sort_key_field) = T::GSI_SORT_KEY {
-            builder = builder
-                .exclusive_start_key(gsi_sort_key_field, AttributeValue::S(gsi_cursor));
+            builder =
+                builder.exclusive_start_key(gsi_sort_key_field, AttributeValue::S(gsi_cursor));
         }
     }
 

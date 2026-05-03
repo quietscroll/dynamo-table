@@ -20,6 +20,11 @@ use crate::table::batch::{BatchReadOutput, BatchWriteOutput, batch_get, batch_wr
 use crate::table::helpers::{query_builder, validation};
 use crate::table::types::{CompositeKey, OutputItems, RetryConfig};
 
+#[inline]
+fn attribute_name_alias(index: usize) -> String {
+    format!("#n{index}")
+}
+
 /// Generic table trait - NOW FULLY GENERIC OVER PK AND SK TYPES!
 pub trait DynamoTable: Serialize + DeserializeOwned + Send + Sync
 where
@@ -1544,7 +1549,8 @@ where
     validation::validate_table_keys::<T>();
     if cfg!(debug_assertions) {
         let field_names: Vec<&str> = fields.iter().map(|f| f.0).collect();
-        validation::validate_field_names(&field_names);
+        let aliases: Vec<String> = (0..field_names.len()).map(attribute_name_alias).collect();
+        validation::validate_aliased_field_names(&field_names, &aliases);
     }
 
     let mut builder = T::dynamodb_client()
@@ -1565,7 +1571,7 @@ where
     let mut update_expressions: Vec<String> = Vec::with_capacity(fields.len());
 
     for (index, field) in fields.iter().enumerate() {
-        let name_alias = format!("#n{index}");
+        let name_alias = attribute_name_alias(index);
         update_expressions.push(format!("{name_alias} = {name_alias} + :incr{index}"));
         builder = builder
             .expression_attribute_names(&name_alias, field.0)
@@ -1674,7 +1680,8 @@ where
 
         assert!(!item.is_empty());
         let field_names: Vec<&str> = item.keys().map(|k| k.as_str()).collect();
-        validation::validate_field_names(&field_names);
+        let aliases: Vec<String> = (0..field_names.len()).map(attribute_name_alias).collect();
+        validation::validate_aliased_field_names(&field_names, &aliases);
     }
 
     let mut update_expressions: Vec<String> = Vec::with_capacity(item.len());
@@ -1695,7 +1702,7 @@ where
         );
 
     for (index, (k, v)) in item.into_iter().enumerate() {
-        let name_alias = format!("#n{index}");
+        let name_alias = attribute_name_alias(index);
         let val = format!(":val{index}");
         update_expressions.push(format!("{name_alias} = {val}"));
         builder = builder
@@ -1746,7 +1753,8 @@ where
 
         assert!(!item.is_empty());
         let field_names: Vec<&str> = item.keys().map(|k| k.as_str()).collect();
-        validation::validate_field_names(&field_names);
+        let aliases: Vec<String> = (0..field_names.len()).map(attribute_name_alias).collect();
+        validation::validate_aliased_field_names(&field_names, &aliases);
     }
 
     let mut update_expressions: Vec<String> = Vec::with_capacity(item.len());
@@ -1767,7 +1775,7 @@ where
         );
 
     for (index, (k, v)) in item.into_iter().enumerate() {
-        let name_alias = format!("#n{index}");
+        let name_alias = attribute_name_alias(index);
         let val = format!(":val{index}");
         update_expressions.push(format!("{name_alias} = {val}"));
         builder = builder

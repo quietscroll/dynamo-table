@@ -1,7 +1,10 @@
 use crate::table::{DynamoTable, GSITable};
 use serde::Serialize;
 use serde_dynamo::{AttributeValue, to_item};
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 /// Retry configuration for batch operations
 pub(crate) mod retry_config {
@@ -71,13 +74,37 @@ pub(crate) mod validation {
         validate_optional_key(T::GSI_SORT_KEY);
     }
 
-    /// Validate field names for update operations
+    /// Validate field names for update operations that alias attribute names.
     ///
-    /// Ensures none of the field names are DynamoDB reserved words.
-    pub(crate) fn validate_field_names(field_names: &[&str]) {
+    /// These helpers are only used by update builders that emit `#n...`
+    /// expression attribute name aliases. Reserved DynamoDB words such as
+    /// `status` are allowed as long as each field is mapped through a distinct
+    /// attribute-name alias instead of being emitted verbatim.
+    pub(crate) fn validate_aliased_field_names(field_names: &[&str], aliases: &[String]) {
         if cfg!(debug_assertions) {
-            for field in field_names {
-                validate_key(field);
+            debug_assert_eq!(
+                field_names.len(),
+                aliases.len(),
+                "Each update field must have an attribute-name alias"
+            );
+
+            let mut seen_aliases = HashSet::with_capacity(aliases.len());
+
+            for (field, alias) in field_names.iter().zip(aliases.iter()) {
+                debug_assert!(!field.is_empty(), "Field name must not be empty");
+                debug_assert!(
+                    alias.starts_with('#') && alias.len() > 1,
+                    "Alias must use DynamoDB expression attribute name syntax: {alias}"
+                );
+                debug_assert_ne!(
+                    *field,
+                    alias.as_str(),
+                    "Field name must not be used directly in the update expression: {field}"
+                );
+                debug_assert!(
+                    seen_aliases.insert(alias.as_str()),
+                    "Duplicate attribute-name alias generated: {alias}"
+                );
             }
         }
     }
@@ -94,6 +121,19 @@ pub(crate) mod validation {
             for key in filter_keys.keys() {
                 validate_key(key);
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::validate_aliased_field_names;
+
+        #[test]
+        fn validate_field_names_allows_reserved_words_when_updates_alias_names() {
+            validate_aliased_field_names(
+                &["status", "status_reason", "last_updated_at"],
+                &["#n0".to_string(), "#n1".to_string(), "#n2".to_string()],
+            );
         }
     }
 }

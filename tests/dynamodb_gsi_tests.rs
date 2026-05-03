@@ -319,10 +319,9 @@ async fn test_gsi_pagination_second_page() {
         .expect("cursor must be present in last_evaluated_key");
 
     // Page 2: must not fail and must start after the first page.
-    let page2 =
-        TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(2), Some(cursor))
-            .await
-            .unwrap();
+    let page2 = TestGSIObject::query_gsi_items(user_id.to_string(), None, Some(2), Some(cursor))
+        .await
+        .unwrap();
 
     assert_eq!(page2.items.len(), 2, "page 2 should have 2 items");
 
@@ -358,13 +357,15 @@ async fn test_gsi_pagination_reverse_second_page() {
     }
 
     // Page 1 (descending): limit 2 → should return the two largest ages.
-    let page1 =
-        TestGSIObject::reverse_query_gsi_items(user_id.to_string(), None, Some(2), None)
-            .await
-            .unwrap();
+    let page1 = TestGSIObject::reverse_query_gsi_items(user_id.to_string(), None, Some(2), None)
+        .await
+        .unwrap();
 
     assert_eq!(page1.items.len(), 2, "reverse page 1 should have 2 items");
-    assert!(page1.items[0].age > page1.items[1].age, "should be descending");
+    assert!(
+        page1.items[0].age > page1.items[1].age,
+        "should be descending"
+    );
     assert!(
         page1.last_evaluated_key.is_some(),
         "last_evaluated_key must be set"
@@ -375,14 +376,10 @@ async fn test_gsi_pagination_reverse_second_page() {
         .expect("cursor must be present in last_evaluated_key");
 
     // Page 2 must not fail and items must be smaller than the last item on page 1.
-    let page2 = TestGSIObject::reverse_query_gsi_items(
-        user_id.to_string(),
-        None,
-        Some(2),
-        Some(cursor),
-    )
-    .await
-    .unwrap();
+    let page2 =
+        TestGSIObject::reverse_query_gsi_items(user_id.to_string(), None, Some(2), Some(cursor))
+            .await
+            .unwrap();
 
     assert_eq!(page2.items.len(), 2, "reverse page 2 should have 2 items");
     assert!(
