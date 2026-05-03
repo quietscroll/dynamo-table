@@ -1152,5 +1152,11 @@ async fn test_scan_items_with_filter_empty_filter() {
 
     // Should return empty results
     assert_eq!(scan_result.items.len(), 0);
-    assert!(scan_result.last_evaluated_key.is_none());
+    assert_eq!(scan_result.count, 0);
+
+    // DynamoDB paginates based on scanned items, not matched items. An empty page can still
+    // expose a cursor when more items remain to be scanned after the filtered-out page.
+    if scan_result.scanned_count < scan_result.limit as i32 {
+        assert!(scan_result.last_evaluated_key.is_none());
+    }
 }
