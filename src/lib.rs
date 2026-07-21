@@ -102,6 +102,9 @@
 mod error;
 pub use error::Error;
 
+mod ttl;
+pub use ttl::Ttl;
+
 /// Consumed capacity tracking via global atomic counters (requires `consumed_capacity_stats` feature).
 #[cfg(feature = "consumed_capacity_stats")]
 pub mod consumed_capacity;

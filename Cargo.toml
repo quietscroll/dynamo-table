@@ -43,6 +43,7 @@ tokio = { version = "1", default-features = false, features = [
   "sync",
 ] }
 tokio-stream = "0.1"
+time = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -350,3 +350,61 @@ async fn test_increment_multiple_fields() {
     assert_eq!(got.p1, 5);
     assert_eq!(got.p2, 13);
 }
+
+/// Test setting and retrieving a Ttl field on a DynamoTable item
+#[tokio::test]
+#[serial]
+async fn test_ttl_attribute() {
+    use dynamo_table::Ttl;
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct SessionItem {
+        session_id: String,
+        user_id: String,
+        ttl: Ttl,
+    }
+
+    impl DynamoTable for SessionItem {
+        type PK = String;
+        type SK = String;
+
+        const TABLE: &'static str = "ttl_test_sessions";
+        const PARTITION_KEY: &'static str = "session_id";
+        const SORT_KEY: Option<&'static str> = None;
+
+        fn partition_key(&self) -> Self::PK {
+            self.session_id.clone()
+        }
+    }
+
+    let _ = setup::table::<SessionItem>().await;
+
+    let ttl = Ttl::from_secs(3600).expect("valid TTL duration");
+    let session = SessionItem {
+        session_id: "sess_12345".to_string(),
+        user_id: "user_67890".to_string(),
+        ttl,
+    };
+
+    // 1. Add item with TTL
+    session.add_item().await.unwrap();
+
+    // 2. Get item back and check deserialization of Ttl
+    let retrieved = SessionItem::get_item(&session.session_id, None)
+        .await
+        .unwrap()
+        .expect("session item should exist");
+
+    assert_eq!(retrieved.session_id, session.session_id);
+    assert_eq!(retrieved.user_id, session.user_id);
+    assert_eq!(retrieved.ttl.as_i64(), ttl.as_i64());
+
+    // 3. Inspect raw DynamoDB item attribute to ensure it was stored as Number (N)
+    let raw_item = get_raw_item::<SessionItem>(&session.session_id, None).await;
+    let ttl_attr = raw_item.get("ttl").expect("ttl attribute should exist");
+    assert!(
+        matches!(ttl_attr, AttributeValue::N(val) if val == &ttl.as_i64().to_string()),
+        "TTL must be serialized as a DynamoDB Number (N), got: {:?}",
+        ttl_attr
+    );
+}
