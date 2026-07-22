@@ -181,6 +181,26 @@ pub(crate) mod expressions {
     }
 }
 
+#[cfg(test)]
+mod projection_tests {
+    use super::query_builder::build_projection;
+
+    #[test]
+    fn build_projection_aliases_every_attribute() {
+        let projection = build_projection(&["game", "status", "created_at"]).unwrap();
+
+        assert_eq!(projection.expression, "#p0, #p1, #p2");
+        assert_eq!(projection.attribute_names.get("#p0").unwrap(), "game");
+        assert_eq!(projection.attribute_names.get("#p1").unwrap(), "status");
+        assert_eq!(projection.attribute_names.get("#p2").unwrap(), "created_at");
+    }
+
+    #[test]
+    fn build_projection_returns_none_for_empty_attributes() {
+        assert!(build_projection(&[]).is_none());
+    }
+}
+
 /// Shared query builder for DynamoDB operations
 pub(crate) mod query_builder {
     use super::{DynamoTable, GSITable, expressions};
@@ -188,6 +208,32 @@ pub(crate) mod query_builder {
     use aws_sdk_dynamodb::types::{AttributeValue, ReturnConsumedCapacity, Select};
     use std::collections::HashMap;
     use std::fmt;
+
+    #[derive(Debug, PartialEq)]
+    pub(crate) struct Projection {
+        pub(crate) expression: String,
+        pub(crate) attribute_names: HashMap<String, String>,
+    }
+
+    pub(crate) fn build_projection(attributes: &[&str]) -> Option<Projection> {
+        if attributes.is_empty() {
+            return None;
+        }
+
+        let mut aliases = Vec::with_capacity(attributes.len());
+        let mut attribute_names = HashMap::with_capacity(attributes.len());
+
+        for (index, attribute) in attributes.iter().enumerate() {
+            let alias = format!("#p{index}");
+            aliases.push(alias.clone());
+            let _ = attribute_names.insert(alias, (*attribute).to_string());
+        }
+
+        Some(Projection {
+            expression: aliases.join(", "),
+            attribute_names,
+        })
+    }
 
     pub(crate) struct QueryBuilder<'a> {
         table_name: &'a str,
@@ -258,11 +304,15 @@ pub(crate) mod query_builder {
             exclusive_start_table_pk: Option<String>,
             limit: u16,
             scan_index_forward: bool,
+            projection_attributes: Option<&[&str]>,
         ) -> QueryFluentBuilder {
             // DynamoDB only allows `AllAttributes` on the base table; secondary indexes are limited
             // to the attributes projected onto the index. See:
             // https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SQLtoNoSQL.SelectingAttributes.html
-            let select = if self.index_name.is_some() {
+            let projection = projection_attributes.and_then(build_projection);
+            let select = if projection.is_some() {
+                Select::SpecificAttributes
+            } else if self.index_name.is_some() {
                 Select::AllProjectedAttributes
             } else {
                 Select::AllAttributes
@@ -282,6 +332,14 @@ pub(crate) mod query_builder {
 
             if let Some(ref index_name) = self.index_name {
                 builder = builder.index_name(index_name);
+            }
+
+            if let Some(projection) = projection {
+                builder = builder.projection_expression(projection.expression);
+
+                for (alias, attribute_name) in projection.attribute_names {
+                    builder = builder.expression_attribute_names(alias, attribute_name);
+                }
             }
 
             // Handle exclusive start key.

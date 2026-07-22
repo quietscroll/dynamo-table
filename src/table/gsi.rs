@@ -1,4 +1,4 @@
-use aws_sdk_dynamodb::types::{AttributeValue, ReturnConsumedCapacity, Select};
+use aws_sdk_dynamodb::types::AttributeValue;
 use serde::Serialize;
 use serde_dynamo::to_item;
 use std::{collections::HashMap, fmt, future::Future};
@@ -50,6 +50,31 @@ pub trait GSITable: DynamoTable {
             exclusive_start_cursor,
             limit,
             true,
+            None,
+        )
+    }
+
+    /// Query items using the GSI, retrieving only the specified attributes.
+    ///
+    /// The returned items are still deserialized as `Self`, so selected attributes
+    /// must be sufficient for the model to deserialize.
+    fn query_gsi_items_with_projection<'a>(
+        gsi_partition_key: String,
+        gsi_sort_key: Option<String>,
+        limit: Option<u16>,
+        exclusive_start_cursor: Option<Cursor<Self>>,
+        projection_attributes: Option<&'a [&'a str]>,
+    ) -> impl Future<Output = Result<OutputItems<Self>, Error>> + 'a
+    where
+        Self: 'a,
+    {
+        query_gsi_items::<Self>(
+            gsi_partition_key,
+            gsi_sort_key,
+            exclusive_start_cursor,
+            limit,
+            true,
+            projection_attributes,
         )
     }
 
@@ -66,6 +91,31 @@ pub trait GSITable: DynamoTable {
             exclusive_start_cursor,
             limit,
             false,
+            None,
+        )
+    }
+
+    /// Query items using the GSI in reverse order, retrieving only the specified attributes.
+    ///
+    /// The returned items are still deserialized as `Self`, so selected attributes
+    /// must be sufficient for the model to deserialize.
+    fn reverse_query_gsi_items_with_projection<'a>(
+        gsi_partition_key: String,
+        gsi_sort_key: Option<String>,
+        limit: Option<u16>,
+        exclusive_start_cursor: Option<Cursor<Self>>,
+        projection_attributes: Option<&'a [&'a str]>,
+    ) -> impl Future<Output = Result<OutputItems<Self>, Error>> + 'a
+    where
+        Self: 'a,
+    {
+        query_gsi_items::<Self>(
+            gsi_partition_key,
+            gsi_sort_key,
+            exclusive_start_cursor,
+            limit,
+            false,
+            projection_attributes,
         )
     }
 
@@ -100,6 +150,37 @@ pub trait GSITable: DynamoTable {
         )
     }
 
+    /// Query items using the GSI with filter expression, retrieving only the specified attributes.
+    ///
+    /// The returned items are still deserialized as `Self`, so selected attributes
+    /// must be sufficient for the model to deserialize.
+    #[allow(clippy::too_many_arguments)]
+    fn query_gsi_items_with_filter_and_projection<'a, U: Serialize>(
+        gsi_partition_key: String,
+        gsi_sort_key: Option<String>,
+        exclusive_start_cursor: Option<Cursor<Self>>,
+        limit: Option<u16>,
+        scan_index_forward: bool,
+        filter_expression: String,
+        filter_expression_values: U,
+        projection_attributes: Option<&'a [&'a str]>,
+    ) -> impl Future<Output = Result<OutputItems<Self>, Error>> + 'a
+    where
+        U: 'a,
+        Self: 'a,
+    {
+        query_gsi_items_with_filter_and_projection::<Self, U>(
+            gsi_partition_key,
+            gsi_sort_key,
+            exclusive_start_cursor,
+            limit,
+            scan_index_forward,
+            filter_expression,
+            filter_expression_values,
+            projection_attributes,
+        )
+    }
+
     /// Count items by GSI partition key
     fn count_gsi_items(gsi_partition_key: String) -> impl Future<Output = Result<usize, Error>> {
         count_gsi_items::<Self>(gsi_partition_key)
@@ -117,7 +198,7 @@ where
     T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
 {
     let mut output =
-        query_gsi_items::<T>(gsi_partition_key, gsi_sort_key, None, Some(1), true).await?;
+        query_gsi_items::<T>(gsi_partition_key, gsi_sort_key, None, Some(1), true, None).await?;
     Ok(output.items.pop())
 }
 
@@ -128,6 +209,7 @@ async fn query_gsi_items<T>(
     exclusive_start_cursor: Option<Cursor<T>>,
     limit: Option<u16>,
     scan_index_forward: bool,
+    projection_attributes: Option<&[&str]>,
 ) -> Result<OutputItems<T>, Error>
 where
     T: GSITable,
@@ -161,6 +243,7 @@ where
                 .map(|cursor| cursor.pk.to_string()),
             limit,
             scan_index_forward,
+            projection_attributes,
         )
         .send()
         .await?;
@@ -187,6 +270,37 @@ where
     T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
     U: Serialize,
 {
+    query_gsi_items_with_filter_and_projection::<T, U>(
+        gsi_partition_key,
+        gsi_sort_key,
+        exclusive_start_cursor,
+        limit,
+        scan_index_forward,
+        filter_expression,
+        filter_expression_values,
+        None,
+    )
+    .await
+}
+
+/// Query GSI items with filter expression and optional projection attributes
+#[allow(clippy::too_many_arguments)]
+pub async fn query_gsi_items_with_filter_and_projection<T, U>(
+    gsi_partition_key: String,
+    gsi_sort_key: Option<String>,
+    exclusive_start_cursor: Option<Cursor<T>>,
+    limit: Option<u16>,
+    scan_index_forward: bool,
+    filter_expression: String,
+    filter_expression_values: U,
+    projection_attributes: Option<&[&str]>,
+) -> Result<OutputItems<T>, Error>
+where
+    T: GSITable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    U: Serialize,
+{
     if cfg!(debug_assertions) {
         validation::validate_filter_expression_values(&filter_expression_values);
     }
@@ -202,55 +316,31 @@ where
 
     validation::validate_gsi_keys::<T>();
 
-    let mut builder = T::dynamodb_client()
-        .await
-        .query()
-        .table_name(T::TABLE)
-        .index_name(T::global_index_name())
-        .select(Select::AllProjectedAttributes)
-        .return_consumed_capacity(if cfg!(feature = "consumed_capacity_stats") {
-            ReturnConsumedCapacity::Total
-        } else {
-            ReturnConsumedCapacity::None
-        })
-        .scan_index_forward(scan_index_forward)
-        .filter_expression(filter_expression)
-        .limit(limit as i32);
-
-    if let Some(cursor) = exclusive_start_cursor {
-        let gsi_cursor = cursor
+    let exclusive_start_key = exclusive_start_cursor.as_ref().map(|cursor| {
+        cursor
             .sk
             .as_ref()
             .map(ToString::to_string)
-            .unwrap_or_else(|| cursor.pk.to_string());
+            .unwrap_or_else(|| cursor.pk.to_string())
+    });
+    let exclusive_start_table_pk = exclusive_start_cursor
+        .as_ref()
+        .map(|cursor| cursor.pk.to_string());
 
-        builder = builder
-            .exclusive_start_key(
-                T::GSI_PARTITION_KEY,
-                AttributeValue::S(gsi_partition_key.clone()),
-            )
-            .exclusive_start_key(T::PARTITION_KEY, AttributeValue::S(cursor.pk.to_string()));
-
-        if let Some(gsi_sort_key_field) = T::GSI_SORT_KEY {
-            builder =
-                builder.exclusive_start_key(gsi_sort_key_field, AttributeValue::S(gsi_cursor));
-        }
-    }
-
-    if let (Some(gsi_sort_key_name), Some(gsi_sort_value)) = (T::GSI_SORT_KEY, gsi_sort_key) {
-        builder = builder
-            .key_condition_expression(format!(
-                "{} = :hash_value and {} = :range_value",
-                T::GSI_PARTITION_KEY,
-                gsi_sort_key_name
-            ))
-            .expression_attribute_values(":hash_value", AttributeValue::S(gsi_partition_key))
-            .expression_attribute_values(":range_value", AttributeValue::S(gsi_sort_value));
-    } else {
-        builder = builder
-            .key_condition_expression(format!("{} = :hash_value", T::GSI_PARTITION_KEY))
-            .expression_attribute_values(":hash_value", AttributeValue::S(gsi_partition_key));
-    }
+    let client = T::dynamodb_client().await;
+    let builder = query_builder::QueryBuilder::for_gsi::<T>();
+    let mut builder = builder
+        .build_query(
+            client,
+            gsi_partition_key,
+            gsi_sort_key,
+            exclusive_start_key,
+            exclusive_start_table_pk,
+            limit,
+            scan_index_forward,
+            projection_attributes,
+        )
+        .filter_expression(filter_expression);
 
     for (key, value) in filter_expression_values {
         builder = builder.expression_attribute_values(key, value);

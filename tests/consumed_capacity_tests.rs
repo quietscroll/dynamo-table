@@ -1,3 +1,5 @@
+#![cfg(feature = "consumed_capacity_stats")]
+
 /// Consumed Capacity Tracking Integration Tests
 ///
 /// Verifies that DynamoDB operations increment the global capacity counters.

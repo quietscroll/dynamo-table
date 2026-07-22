@@ -241,6 +241,94 @@ async fn test_gsi_with_filter() {
     }
 }
 
+/// Test GSI query projection retrieves only selected attributes.
+#[tokio::test]
+#[serial]
+async fn test_gsi_query_with_projection() {
+    setup_gsi_table().await;
+
+    let user_id = "gsi_projection_user";
+
+    let obj = TestGSIObject {
+        game: "projection_game".to_string(),
+        age: "projection_age".to_string(),
+        user_id: user_id.to_string(),
+        created_at: "2024-01-01T10:00:00Z".to_string(),
+        ux: "projected_value".to_string(),
+    };
+    obj.add_item().await.unwrap();
+
+    let results = ProjectedTestGSIObject::query_gsi_items_with_projection(
+        user_id.to_string(),
+        None,
+        Some(10),
+        None,
+        Some(&["user_id", "ux"]),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].user_id.as_deref(), Some(user_id));
+    assert_eq!(results.items[0].ux.as_deref(), Some("projected_value"));
+    assert_eq!(results.items[0].game, None);
+    assert_eq!(results.items[0].age, None);
+    assert_eq!(results.items[0].created_at, None);
+}
+
+/// Test filtered GSI query projection composes filter and projection expressions.
+#[tokio::test]
+#[serial]
+async fn test_gsi_query_with_filter_and_projection() {
+    setup_gsi_table().await;
+
+    let user_id = "gsi_filter_projection_user";
+
+    let objects = vec![
+        TestGSIObject {
+            game: "filter_projection_game1".to_string(),
+            age: "filter_projection_age1".to_string(),
+            user_id: user_id.to_string(),
+            created_at: "2024-01-01T10:00:00Z".to_string(),
+            ux: "match_this".to_string(),
+        },
+        TestGSIObject {
+            game: "filter_projection_game2".to_string(),
+            age: "filter_projection_age2".to_string(),
+            user_id: user_id.to_string(),
+            created_at: "2024-01-02T10:00:00Z".to_string(),
+            ux: "skip_this".to_string(),
+        },
+    ];
+
+    for obj in &objects {
+        obj.add_item().await.unwrap();
+    }
+
+    let mut filter_values = HashMap::new();
+    filter_values.insert(":ux_value".to_string(), "match_this".to_string());
+
+    let results = ProjectedTestGSIObject::query_gsi_items_with_filter_and_projection(
+        user_id.to_string(),
+        None,
+        None,
+        Some(10),
+        true,
+        "ux = :ux_value".to_string(),
+        filter_values,
+        Some(&["user_id", "ux"]),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].user_id.as_deref(), Some(user_id));
+    assert_eq!(results.items[0].ux.as_deref(), Some("match_this"));
+    assert_eq!(results.items[0].game, None);
+    assert_eq!(results.items[0].age, None);
+    assert_eq!(results.items[0].created_at, None);
+}
+
 /// Test GSI query with both partition and sort key
 #[tokio::test]
 #[serial]

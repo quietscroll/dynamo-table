@@ -305,6 +305,61 @@ where
         )
     }
 
+    /// Get items from the table, retrieving only the specified attributes.
+    ///
+    /// The returned items are still deserialized as `Self`, so selected attributes
+    /// must be sufficient for the model to deserialize.
+    fn query_items_with_projection<'a>(
+        partition_key: &'a Self::PK,
+        sort_key: Option<&'a Self::SK>,
+        limit: Option<u16>,
+        exclusive_start_key: Option<&'a Self::SK>,
+        projection_attributes: Option<&'a [&'a str]>,
+    ) -> impl Future<Output = Result<OutputItems<Self>, Error>> + 'a
+    where
+        Self: 'a,
+    {
+        query_items_with_projection::<Self>(
+            partition_key,
+            sort_key,
+            exclusive_start_key,
+            limit,
+            None,
+            true,
+            projection_attributes,
+        )
+    }
+
+    /// Get items from the table with filter expression, retrieving only the specified attributes.
+    ///
+    /// The returned items are still deserialized as `Self`, so selected attributes
+    /// must be sufficient for the model to deserialize.
+    fn query_items_with_filter_and_projection<'a, U: Serialize>(
+        partition_key: &'a Self::PK,
+        sort_key: Option<&'a Self::SK>,
+        limit: Option<u16>,
+        exclusive_start_key: Option<&'a Self::SK>,
+        filter_expression: String,
+        filter_expression_values: U,
+        projection_attributes: Option<&'a [&'a str]>,
+    ) -> impl Future<Output = Result<OutputItems<Self>, Error>> + 'a
+    where
+        U: 'a,
+        Self: 'a,
+    {
+        query_items_with_filter_and_projection::<Self, U>(
+            partition_key,
+            sort_key,
+            exclusive_start_key,
+            limit,
+            None,
+            true,
+            filter_expression,
+            filter_expression_values,
+            projection_attributes,
+        )
+    }
+
     /// Get items from the table
     fn reverse_query_items(
         partition_key: &Self::PK,
@@ -1053,6 +1108,7 @@ async fn _query_items_builder<T>(
     limit: u16,
     index_name: Option<String>,
     scan_index_forward: bool,
+    projection_attributes: Option<&[&str]>,
 ) -> QueryFluentBuilder
 where
     T: DynamoTable,
@@ -1077,6 +1133,7 @@ where
         None,
         limit,
         scan_index_forward,
+        projection_attributes,
     )
 }
 
@@ -1118,6 +1175,110 @@ where
         limit,
         index_name,
         scan_index_forward,
+        None,
+    )
+    .await
+    .filter_expression(filter_expression);
+
+    for (key, value) in filter_expression_values {
+        builder = builder.expression_attribute_values(key, value);
+    }
+
+    let result = builder.send().await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
+
+    Ok(OutputItems::from((result, limit)))
+}
+
+/// Query items from a table or secondary index, retrieving only the specified attributes.
+///
+/// The returned items are still deserialized as `T`, so selected attributes
+/// must be sufficient for the model to deserialize.
+#[allow(clippy::too_many_arguments)]
+pub async fn query_items_with_projection<T>(
+    partition_key: &T::PK,
+    sort_key: Option<&T::SK>,
+    exclusive_start_key: Option<&T::SK>,
+    limit: Option<u16>,
+    index_name: Option<String>,
+    scan_index_forward: bool,
+    projection_attributes: Option<&[&str]>,
+) -> Result<OutputItems<T>, Error>
+where
+    T: DynamoTable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+{
+    if limit.map(|l| l == 0).unwrap_or(false) {
+        return Ok(OutputItems::default());
+    }
+
+    let limit = limit.unwrap_or(T::DEFAULT_PAGE_SIZE);
+
+    let result = _query_items_builder::<T>(
+        partition_key,
+        sort_key,
+        exclusive_start_key,
+        limit,
+        index_name,
+        scan_index_forward,
+        projection_attributes,
+    )
+    .await
+    .send()
+    .await?;
+
+    #[cfg(feature = "consumed_capacity_stats")]
+    crate::consumed_capacity::stats::record_from_option(result.consumed_capacity.as_ref());
+
+    Ok(OutputItems::from((result, limit)))
+}
+
+/// Query items from a table or secondary index with filter expression, retrieving only the specified attributes.
+///
+/// The returned items are still deserialized as `T`, so selected attributes
+/// must be sufficient for the model to deserialize.
+#[allow(clippy::too_many_arguments)]
+pub async fn query_items_with_filter_and_projection<T, U>(
+    partition_key: &T::PK,
+    sort_key: Option<&T::SK>,
+    exclusive_start_key: Option<&T::SK>,
+    limit: Option<u16>,
+    index_name: Option<String>,
+    scan_index_forward: bool,
+    filter_expression: String,
+    filter_expression_values: U,
+    projection_attributes: Option<&[&str]>,
+) -> Result<OutputItems<T>, Error>
+where
+    T: DynamoTable,
+    T::PK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    T::SK: fmt::Display + Clone + Send + Sync + fmt::Debug,
+    U: Serialize,
+{
+    if cfg!(debug_assertions) {
+        validation::validate_filter_expression_values(&filter_expression_values);
+    }
+
+    if limit.map(|l| l == 0).unwrap_or(false) {
+        return Ok(OutputItems::default());
+    }
+
+    let limit = limit.unwrap_or(T::DEFAULT_PAGE_SIZE);
+
+    let filter_expression_values =
+        to_item::<_, HashMap<String, AttributeValue>>(filter_expression_values)?;
+
+    let mut builder = _query_items_builder::<T>(
+        partition_key,
+        sort_key,
+        exclusive_start_key,
+        limit,
+        index_name,
+        scan_index_forward,
+        projection_attributes,
     )
     .await
     .filter_expression(filter_expression);
@@ -1407,6 +1568,7 @@ where
         limit,
         index_name,
         scan_index_forward,
+        None,
     )
     .await
     .send()
@@ -2008,6 +2170,7 @@ where
         limit,
         index_name,
         scan_index_forward,
+        None,
     )
     .await
     .into_paginator()

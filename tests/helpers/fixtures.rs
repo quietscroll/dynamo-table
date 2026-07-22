@@ -88,3 +88,42 @@ impl GSITable for TestGSIObject {
         Some(self.age.clone())
     }
 }
+
+/// Test object that can deserialize partial projection query results.
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ProjectedTestGSIObject {
+    pub game: Option<String>,
+    pub age: Option<String>,
+    pub user_id: Option<String>,
+    pub created_at: Option<String>,
+    pub ux: Option<String>,
+}
+
+impl DynamoTable for ProjectedTestGSIObject {
+    type PK = String;
+    type SK = String;
+    const TABLE: &'static str = TestGSIObject::TABLE;
+    const PARTITION_KEY: &'static str = TestGSIObject::PARTITION_KEY;
+    const SORT_KEY: Option<&'static str> = TestGSIObject::SORT_KEY;
+
+    fn partition_key(&self) -> String {
+        self.game.clone().unwrap_or_default()
+    }
+
+    fn sort_key(&self) -> SortKey<String> {
+        self.age.clone()
+    }
+}
+
+impl GSITable for ProjectedTestGSIObject {
+    const GSI_PARTITION_KEY: &'static str = TestGSIObject::GSI_PARTITION_KEY;
+    const GSI_SORT_KEY: Option<&'static str> = TestGSIObject::GSI_SORT_KEY;
+
+    fn gsi_partition_key(&self) -> String {
+        self.user_id.clone().unwrap_or_default()
+    }
+
+    fn gsi_sort_key(&self) -> Option<String> {
+        self.age.clone()
+    }
+}

@@ -12,7 +12,7 @@ pub use serde::{Deserialize, Serialize};
 pub use fixtures::{TestCounters, TestObject};
 
 #[allow(unused_imports)]
-pub use fixtures::TestGSIObject;
+pub use fixtures::{ProjectedTestGSIObject, TestGSIObject};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;

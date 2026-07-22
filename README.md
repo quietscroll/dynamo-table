@@ -496,6 +496,27 @@ async fn filter_examples() -> Result<(), Error> {
         json!({ ":status": "verified" }),
     ).await?;
 
+    // GSI query with projection attributes
+    let projected_gsi = User::query_gsi_items_with_projection(
+        "user@example.com".to_string(),
+        None,
+        Some(20),
+        None,
+        Some(&["email", "account_status"]),
+    ).await?;
+
+    // Filtered GSI query with projection attributes
+    let projected_filtered_gsi = User::query_gsi_items_with_filter_and_projection(
+        "user@example.com".to_string(),
+        None,
+        None,
+        Some(20),
+        true,
+        "account_status = :status".to_string(),
+        json!({ ":status": "verified" }),
+        Some(&["email", "account_status"]),
+    ).await?;
+
     Ok(())
 }
 ```
@@ -862,6 +883,10 @@ dynamo_table = { version = "0.3", default-features = false }
 7. **Monitor consumed capacity** during development to optimize costs
 8. **Avoid scans** when possible - prefer query or batch get operations
 
+Projection query helpers still deserialize results into your table type. When
+selecting only some attributes, make omitted fields optional or provide serde
+defaults, or include all fields required to deserialize the model.
+
 ## API Reference
 
 ### DynamoTable Trait Methods
@@ -879,6 +904,8 @@ dynamo_table = { version = "0.3", default-features = false }
 - `query_item(pk)` - Query single item
 - `reverse_query_items(...)` - Query in descending order
 - `query_items_with_filter(...)` - Query with filter expression
+- `query_items_with_projection(...)` - Query table or secondary index with projected attributes
+- `query_items_with_filter_and_projection(...)` - Query table or secondary index with filter and projected attributes
 - `query_stream(...)` - Stream query results
 - `query_begins_with(...)` - Query with sort key prefix
 - `query_between(...)` - Query sort key range
@@ -920,6 +947,9 @@ dynamo_table = { version = "0.3", default-features = false }
 - `query_gsi_item(...)` - Query single item by GSI
 - `reverse_query_gsi_items(...)` - Reverse query on GSI with `Option<Cursor<T>>` pagination
 - `query_gsi_items_with_filter(...)` - Query GSI with filter and `Option<Cursor<T>>` pagination
+- `query_gsi_items_with_projection(...)` - Query GSI with projected attributes
+- `reverse_query_gsi_items_with_projection(...)` - Reverse query GSI with projected attributes
+- `query_gsi_items_with_filter_and_projection(...)` - Query GSI with filter and projected attributes
 - `count_gsi_items(...)` - Count items by GSI key
 
 ## Examples
