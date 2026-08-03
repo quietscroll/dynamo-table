@@ -10,17 +10,7 @@ use helpers::*;
 
 /// Helper to clean and setup GSI table
 async fn setup_gsi_table() {
-    // Client auto-initializes with defaults on first use
-    let client = dynamo_table::dynamodb_client().await;
-    let _ = client
-        .delete_table()
-        .table_name("tests_gsi_objects")
-        .send()
-        .await;
-
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let _ = setup::table_with_gsi::<TestGSIObject>().await;
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 }
 
 /// Test GSI query basic functionality
@@ -34,21 +24,21 @@ async fn test_gsi_query_basic() {
     // Create test objects with same user_id
     let objects = vec![
         TestGSIObject {
-            game: "game1".to_string(),
+            game: "gsi_basic_game1".to_string(),
             age: "age1".to_string(),
             user_id: user_id.to_string(),
             created_at: "2024-01-01T10:00:00Z".to_string(),
             ux: "test1".to_string(),
         },
         TestGSIObject {
-            game: "game2".to_string(),
+            game: "gsi_basic_game2".to_string(),
             age: "age2".to_string(),
             user_id: user_id.to_string(),
             created_at: "2024-01-02T10:00:00Z".to_string(),
             ux: "test2".to_string(),
         },
         TestGSIObject {
-            game: "game3".to_string(),
+            game: "gsi_basic_game3".to_string(),
             age: "age3".to_string(),
             user_id: "other_user".to_string(),
             created_at: "2024-01-03T10:00:00Z".to_string(),
@@ -87,7 +77,7 @@ async fn test_gsi_reverse_query() {
     // Create items
     for i in 0..5 {
         let obj = TestGSIObject {
-            game: format!("game{}", i),
+            game: format!("gsi_rev_game{}", i),
             age: format!("age{}", i),
             user_id: user_id.to_string(),
             created_at: format!("2024-01-0{}T10:00:00Z", i + 1),
@@ -118,7 +108,7 @@ async fn test_gsi_query_single() {
     let age = "unique_age".to_string();
 
     let obj = TestGSIObject {
-        game: "single_game".to_string(),
+        game: "gsi_single_game".to_string(),
         age: age.clone(),
         user_id: user_id.to_string(),
         created_at: "2024-01-01T12:00:00Z".to_string(),
@@ -135,7 +125,7 @@ async fn test_gsi_query_single() {
     assert!(result.is_some());
     let found = result.unwrap();
     assert_eq!(found.user_id, user_id);
-    assert_eq!(found.game, "single_game");
+    assert_eq!(found.game, "gsi_single_game");
 
     // Query single item with sort key
     let result_with_sk = TestGSIObject::query_gsi_item(user_id.to_string(), Some(age))
@@ -340,7 +330,7 @@ async fn test_gsi_with_sort_key() {
     // Create items with same user_id but different ages
     for i in 0..5 {
         let obj = TestGSIObject {
-            game: format!("game{}", i),
+            game: format!("gsi_sort_game{}", i),
             age: format!("age{:02}", i), // Zero-padded
             user_id: user_id.to_string(),
             created_at: format!("2024-01-0{}T10:00:00Z", i + 1),
