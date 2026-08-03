@@ -1,7 +1,7 @@
 use aws_sdk_dynamodb::operation;
 use aws_sdk_dynamodb::types::AttributeValue;
 use serde::de::DeserializeOwned;
-use serde_dynamo::{from_attribute_value, from_items};
+use serde_dynamo::{from_attribute_value, from_item, from_items};
 use std::{collections::HashMap, fmt, time::Duration};
 
 use crate::table::DynamoTable;
@@ -143,18 +143,37 @@ where
 {
     fn from((output, limit): (operation::scan::ScanOutput, u16)) -> Self {
         if let Some(items) = output.items {
-            let items: Vec<T> = from_items(items).unwrap_or_else(|e| {
-                if cfg!(debug_assertions) {
-                    tracing::error!(
-                        table = T::TABLE,
-                        error = %e,
-                        "Failed to deserialize scan results; this usually indicates a schema mismatch between the database and the model"
-                    );
+            let items: Vec<T> = match from_items(items.clone()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    if cfg!(debug_assertions) {
+                        let mut detail = String::new();
+                        for (idx, item) in items.iter().enumerate() {
+                            if let Err(item_err) = from_item::<_, T>(item.clone()) {
+                                detail = format!(
+                                    "\nItem at index {} failed to deserialize: {}\nRaw item attributes: {:#?}",
+                                    idx, item_err, item
+                                );
+                                break;
+                            }
+                        }
+                        tracing::error!(
+                            table = T::TABLE,
+                            error = %e,
+                            "Failed to deserialize scan results; this usually indicates a schema mismatch between the database and the model. Details:{}",
+                            detail
+                        );
 
-                    panic!("Deserialization failed in debug mode for table '{}': {}", T::TABLE, e);
+                        panic!(
+                            "Deserialization failed in debug mode for table '{}': {}\nCause:{}",
+                            T::TABLE,
+                            e,
+                            detail
+                        );
+                    }
+                    Vec::new()
                 }
-                Vec::new()
-            });
+            };
             let count = output.count;
             let scanned_count = output.scanned_count;
             let last_evaluated_key = parse_last_evaluated_key::<T>(output.last_evaluated_key);
@@ -180,18 +199,37 @@ where
 {
     fn from((output, limit): (operation::query::QueryOutput, u16)) -> Self {
         if let Some(items) = output.items {
-            let items: Vec<T> = from_items(items).unwrap_or_else(|e| {
-                if cfg!(debug_assertions) {
-                    tracing::error!(
-                        table = T::TABLE,
-                        error = %e,
-                        "Failed to deserialize query results; this usually indicates a schema mismatch between the database and the model"
-                    );
+            let items: Vec<T> = match from_items(items.clone()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    if cfg!(debug_assertions) {
+                        let mut detail = String::new();
+                        for (idx, item) in items.iter().enumerate() {
+                            if let Err(item_err) = from_item::<_, T>(item.clone()) {
+                                detail = format!(
+                                    "\nItem at index {} failed to deserialize: {}\nRaw item attributes: {:#?}",
+                                    idx, item_err, item
+                                );
+                                break;
+                            }
+                        }
+                        tracing::error!(
+                            table = T::TABLE,
+                            error = %e,
+                            "Failed to deserialize query results; this usually indicates a schema mismatch between the database and the model. Details:{}",
+                            detail
+                        );
 
-                    panic!("Deserialization failed in debug mode for table '{}': {}", T::TABLE, e);
+                        panic!(
+                            "Deserialization failed in debug mode for table '{}': {}\nCause:{}",
+                            T::TABLE,
+                            e,
+                            detail
+                        );
+                    }
+                    Vec::new()
                 }
-                Vec::new()
-            });
+            };
             let count = output.count;
             let scanned_count = output.scanned_count;
             let last_evaluated_key = parse_last_evaluated_key::<T>(output.last_evaluated_key);
